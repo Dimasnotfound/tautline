@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">DevSpace workspace token benchmark</title>
+  <desc id="desc">A full 350-entry workspace payload uses 9157 tokens while the compact model-visible payload uses 576 tokens, a 93.7 percent reduction.</desc>
+  <rect width="1200" height="360" rx="24" fill="#0f172a"/>
+  <text x="64" y="62" fill="#f8fafc" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="28" font-weight="750">Workspace preview benchmark</text>
+  <text x="64" y="92" fill="#94a3b8" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="15">350 entries · compact JSON · o200k_base tokenizer</text>
+  <g transform="translate(64 132)" font-family="Inter,Segoe UI,Arial,sans-serif">
+    <text x="0" y="24" fill="#cbd5e1" font-size="15" font-weight="650">Full tree in model context</text>
+    <rect x="245" width="820" height="44" rx="12" fill="#334155"/>
+    <rect x="245" width="820" height="44" rx="12" fill="#f97316"/>
+    <text x="1082" y="29" fill="#fed7aa" font-size="16" font-weight="750">9,157 tokens</text>
+
+    <text x="0" y="102" fill="#cbd5e1" font-size="15" font-weight="650">DevSpace model payload</text>
+    <rect x="245" y="78" width="820" height="44" rx="12" fill="#334155"/>
+    <rect x="245" y="78" width="52" height="44" rx="12" fill="#22c55e"/>
+    <text x="1082" y="107" fill="#bbf7d0" font-size="16" font-weight="750">576 tokens</text>
+  </g>
+  <g transform="translate(64 286)" font-family="Inter,Segoe UI,Arial,sans-serif">
+    <rect width="330" height="46" rx="23" fill="#052e16" stroke="#166534"/>
+    <text x="165" y="29" text-anchor="middle" fill="#86efac" font-size="18" font-weight="800">93.7% fewer preview tokens</text>
+    <text x="360" y="28" fill="#94a3b8" font-size="13">Full widget data remains available through hidden tool-result metadata.</text>
+  </g>
+</svg>

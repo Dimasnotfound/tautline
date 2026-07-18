@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">DevSpace architecture</title>
+  <desc id="desc">ChatGPT connects over HTTPS and OAuth PKCE to a local Go MCP server which restricts tools to configured roots and renders lightweight widgets.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0l10 5-10 5z" fill="#64748b"/></marker>
+    <filter id="shadow"><feDropShadow dx="0" dy="8" stdDeviation="10" flood-opacity=".12"/></filter>
+  </defs>
+  <rect width="1200" height="420" rx="24" fill="#f8fafc"/>
+  <text x="60" y="58" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="28" font-weight="750" fill="#0f172a">Local-first, narrowly scoped, UI-aware</text>
+  <g filter="url(#shadow)" font-family="Inter,Segoe UI,Arial,sans-serif">
+    <g transform="translate(60 112)">
+      <rect width="235" height="180" rx="18" fill="#fff" stroke="#cbd5e1"/>
+      <circle cx="42" cy="42" r="20" fill="#111827"/><text x="42" y="48" text-anchor="middle" fill="#fff" font-size="18" font-weight="700">C</text>
+      <text x="76" y="40" fill="#0f172a" font-size="19" font-weight="700">ChatGPT</text>
+      <text x="24" y="86" fill="#475569" font-size="14">MCP tool calls</text>
+      <text x="24" y="112" fill="#475569" font-size="14">Interactive app cards</text>
+      <text x="24" y="138" fill="#475569" font-size="14">Developer Mode refresh</text>
+    </g>
+    <g transform="translate(375 112)">
+      <rect width="250" height="180" rx="18" fill="#fff" stroke="#93c5fd"/>
+      <rect x="24" y="24" width="38" height="38" rx="10" fill="#2563eb"/>
+      <path d="M35 43h16M43 35v16" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
+      <text x="76" y="40" fill="#0f172a" font-size="19" font-weight="700">HTTPS + OAuth</text>
+      <text x="24" y="86" fill="#475569" font-size="14">Authorization Code</text>
+      <text x="24" y="112" fill="#475569" font-size="14">PKCE S256</text>
+      <text x="24" y="138" fill="#475569" font-size="14">Signed access + refresh tokens</text>
+    </g>
+    <g transform="translate(705 92)">
+      <rect width="435" height="220" rx="20" fill="#0f172a" stroke="#334155"/>
+      <text x="28" y="43" fill="#f8fafc" font-size="21" font-weight="750">DevSpace · Go MCP server</text>
+      <g transform="translate(28 68)">
+        <rect width="178" height="52" rx="12" fill="#172554" stroke="#1d4ed8"/>
+        <text x="89" y="23" text-anchor="middle" fill="#bfdbfe" font-size="13" font-weight="700">Model-visible</text>
+        <text x="89" y="41" text-anchor="middle" fill="#93c5fd" font-size="12">compact structuredContent</text>
+        <rect x="194" width="185" height="52" rx="12" fill="#3b0764" stroke="#7e22ce"/>
+        <text x="286.5" y="23" text-anchor="middle" fill="#e9d5ff" font-size="13" font-weight="700">Widget-only</text>
+        <text x="286.5" y="41" text-anchor="middle" fill="#d8b4fe" font-size="12">full data in hidden _meta</text>
+      </g>
+      <g transform="translate(28 138)" font-size="13">
+        <rect width="86" height="38" rx="10" fill="#052e16" stroke="#166534"/><text x="43" y="24" text-anchor="middle" fill="#86efac">read</text>
+        <rect x="96" width="86" height="38" rx="10" fill="#052e16" stroke="#166534"/><text x="139" y="24" text-anchor="middle" fill="#86efac">write</text>
+        <rect x="192" width="86" height="38" rx="10" fill="#052e16" stroke="#166534"/><text x="235" y="24" text-anchor="middle" fill="#86efac">edit</text>
+        <rect x="288" width="91" height="38" rx="10" fill="#052e16" stroke="#166534"/><text x="333.5" y="24" text-anchor="middle" fill="#86efac">command</text>
+      </g>
+      <text x="28" y="202" fill="#94a3b8" font-size="13">Every path is canonicalized and checked against allowed roots.</text>
+    </g>
+  </g>
+  <path d="M295 202h70" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M625 202h70" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+  <g transform="translate(770 342)" font-family="Inter,Segoe UI,Arial,sans-serif">
+    <path d="M0 0h310" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+    <rect x="310" y="-24" width="150" height="48" rx="12" fill="#fff" stroke="#cbd5e1"/>
+    <text x="385" y="6" text-anchor="middle" fill="#0f172a" font-size="14" font-weight="700">Allowed folders only</text>
+  </g>
+</svg>

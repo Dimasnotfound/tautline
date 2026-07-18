@@ -1,0 +1,44 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# DevSpace runtime state
+runtime/*
+!runtime/.gitkeep
+.devspace/
+.owner_token.txt
+*.pid
+*.log
+
+# Build outputs
+bin/
+dist/
+build/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Dependencies and caches
+node_modules/
+vendor/
+coverage/
+.tmp/
+tmp/
+
+# IDE and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local tests and previews
+.test-workspace*/
+widget-preview*
+*.local
