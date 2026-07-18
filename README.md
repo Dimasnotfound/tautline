@@ -59,19 +59,21 @@ python scripts/payload_benchmark.py
 
 > The 93.7% figure applies to this repository-preview benchmark, not every tool call and not an entire ChatGPT bill. Actual token usage depends on repository shape, selected tools, model tokenizer, conversation history, and ChatGPT behavior.
 
-## Interactive ChatGPT UI
+## Codex-style coding workflow
 
-DevSpace registers four lightweight MCP App resources:
+The default `DEVSPACE_WIDGETS=changes` mode follows a quieter agent loop:
 
-| Tool | Widget | Purpose |
-|---|---|---|
-| `open_workspace` | Workspace card | Repository statistics and progressive tree |
-| `read` | File viewer | UTF-8 preview with line numbers and language detection |
-| `write` | Diff viewer | Atomic write result and unified diff |
-| `edit` | Diff viewer | Unique replacement result and unified diff |
-| `bash` | Command result | Exit code, duration, working directory, and bounded output |
+1. `open_workspace` is called once and returns a reusable `workspace_id`.
+2. `read`, `write`, `edit`, and `bash` use relative paths inside that workspace.
+3. Individual operations stay as compact native tool results instead of spawning a custom widget each time.
+4. After the final file edit, `show_changes` renders one aggregate review card.
+5. The assistant runs verification and gives a short final summary.
 
-Each widget is plain HTML, CSS, and JavaScript embedded in the Go binary. There is no React runtime, CDN, remote font, external script, WebSocket, or frontend build step.
+Only two custom cards are active by default: a small workspace card and one final change-review card. Set `DEVSPACE_WIDGETS=full` to restore file, per-edit diff, and command widgets, or `off` to disable custom UI completely.
+
+See [docs/CODING_WORKFLOW.md](docs/CODING_WORKFLOW.md) for the complete tool loop and checkpoint behavior.
+
+Every widget is plain HTML, CSS, and JavaScript embedded in the Go binary. There is no React runtime, CDN, remote font, external script, WebSocket, or frontend build step.
 
 ## Architecture
 
@@ -191,6 +193,7 @@ Copy `.env.example` to `.env` or run `scripts/setup.ps1`.
 | `DEVSPACE_ALLOWED_ROOTS` | `.` | Comma-separated directories available to tools |
 | `DEVSPACE_OWNER_TOKEN` | Temporary random token | Secret used for approval and token signing |
 | `DEVSPACE_REQUIRE_AUTH` | `true` | Bearer validation; never disable on a public endpoint |
+| `DEVSPACE_WIDGETS` | `changes` | `changes`, `full`, or `off` custom UI mode |
 | `DEVSPACE_SHOW_OWNER_TOKEN` | `false` | Display a configured token in startup output |
 | `DEVSPACE_PUBLIC_BASE_URL` | Derived from request | Stable public HTTPS origin for OAuth metadata |
 | `DEVSPACE_START_TUNNEL` | `false` | Start a named Cloudflare tunnel automatically |
@@ -241,6 +244,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for widget and security requirements.
 
 ## Roadmap
 
+- Optional Codex-style `apply_patch` and long-running process sessions.
 - Cursor-based directory expansion for very large monorepos.
 - Optional Git status and branch summaries.
 - More granular command policies.

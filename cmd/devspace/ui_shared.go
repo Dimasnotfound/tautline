@@ -247,6 +247,8 @@ function bindActions(copyValue) {
 function extractWidgetData(payload) {
   const envelope = payload?.mcp_tool_result || payload?.call_tool_result || payload;
   return envelope?._meta?.["devspace/widgetData"] ||
+    envelope?.["devspace/widgetData"] ||
+    payload?.["devspace/widgetData"] ||
     envelope?.structuredContent ||
     payload?.toolOutput ||
     payload;

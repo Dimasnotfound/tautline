@@ -9,10 +9,11 @@ import (
 
 const (
 	widgetMIMEType     = "text/html;profile=mcp-app"
-	workspaceWidgetURI = "ui://devspace/workspace-card-v2.html"
+	workspaceWidgetURI = "ui://devspace/workspace-card-v3.html"
 	fileWidgetURI      = "ui://devspace/file-viewer-v2.html"
 	diffWidgetURI      = "ui://devspace/diff-viewer-v2.html"
 	commandWidgetURI   = "ui://devspace/command-result-v2.html"
+	changesWidgetURI   = "ui://devspace/changes-review-v1.html"
 )
 
 type widgetDefinition struct {
@@ -23,31 +24,46 @@ type widgetDefinition struct {
 }
 
 func registerWidgetResource(s *server.MCPServer) {
+	if activeWidgetMode == widgetModeOff {
+		return
+	}
 	widgets := []widgetDefinition{
 		{
 			URI:         workspaceWidgetURI,
-			Name:        "DevSpace workspace overview",
-			Description: "A lightweight repository overview with compact statistics and a progressive file tree.",
+			Name:        "DevSpace workspace",
+			Description: "A clean workspace card shown once when a coding session opens.",
 			HTML:        workspaceWidgetHTML(),
 		},
-		{
-			URI:         fileWidgetURI,
-			Name:        "DevSpace file viewer",
-			Description: "A compact UTF-8 file preview that expands to a full file view without loading an editor framework.",
-			HTML:        fileWidgetHTML(),
-		},
-		{
-			URI:         diffWidgetURI,
-			Name:        "DevSpace diff viewer",
-			Description: "A focused unified-diff review card for write and edit operations.",
-			HTML:        diffWidgetHTML(),
-		},
-		{
-			URI:         commandWidgetURI,
-			Name:        "DevSpace command result",
-			Description: "A concise command result with exit status, duration, working directory, and bounded output.",
-			HTML:        commandWidgetHTML(),
-		},
+	}
+	if activeWidgetMode == widgetModeChanges {
+		widgets = append(widgets, widgetDefinition{
+			URI:         changesWidgetURI,
+			Name:        "DevSpace change review",
+			Description: "One aggregate change review rendered after the final edit in a coding turn.",
+			HTML:        changesWidgetHTML(),
+		})
+	}
+	if activeWidgetMode == widgetModeFull {
+		widgets = append(widgets,
+			widgetDefinition{
+				URI:         fileWidgetURI,
+				Name:        "DevSpace file viewer",
+				Description: "A compact UTF-8 file preview that expands to a full file view.",
+				HTML:        fileWidgetHTML(),
+			},
+			widgetDefinition{
+				URI:         diffWidgetURI,
+				Name:        "DevSpace diff viewer",
+				Description: "A focused unified-diff card for individual write and edit operations.",
+				HTML:        diffWidgetHTML(),
+			},
+			widgetDefinition{
+				URI:         commandWidgetURI,
+				Name:        "DevSpace command result",
+				Description: "A command card with exit status, duration, directory, and bounded output.",
+				HTML:        commandWidgetHTML(),
+			},
+		)
 	}
 
 	for _, item := range widgets {

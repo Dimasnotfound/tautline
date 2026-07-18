@@ -24,6 +24,7 @@ $Lines = @(
     "DEVSPACE_ALLOWED_ROOTS=$AllowedRoots",
     "DEVSPACE_OWNER_TOKEN=$OwnerToken",
     "DEVSPACE_REQUIRE_AUTH=true",
+    "DEVSPACE_WIDGETS=changes",
     "DEVSPACE_SHOW_OWNER_TOKEN=false",
     "DEVSPACE_PUBLIC_BASE_URL=$PublicBaseUrl",
     "DEVSPACE_START_TUNNEL=$($StartTunnel.IsPresent.ToString().ToLowerInvariant())",

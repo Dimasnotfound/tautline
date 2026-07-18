@@ -49,7 +49,7 @@ Select DevSpace in the conversation and ask:
 Use DevSpace to open /path/to/allowed/project.
 ```
 
-A successful Apps SDK connection should render a workspace card rather than only a text fallback. Test the other cards by reading a file, editing a disposable test file, and running a harmless command.
+With the recommended `DEVSPACE_WIDGETS=changes` mode, a successful Apps SDK connection renders one compact workspace card. Normal read, write, edit, and command calls remain native tool results. After editing a disposable test file, call `show_changes` once to verify the aggregate review card.
 
 ## 5. Troubleshooting
 

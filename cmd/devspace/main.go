@@ -70,12 +70,14 @@ func main() {
 
 func doStart(port string, enableTunnel bool) {
 	loadConfig()
+	loadWorkflowConfig()
 	oauth := newOAuth()
 
 	mcpServer := server.NewMCPServer(
 		appName,
 		appVersion,
 		server.WithToolCapabilities(true),
+		server.WithInstructions(codingWorkflowInstructions()),
 	)
 	registerWidgetResource(mcpServer)
 	registerTools(mcpServer)
@@ -149,6 +151,7 @@ func doStart(port string, enableTunnel bool) {
 		fmt.Println("Owner token: configured and hidden (set DEVSPACE_SHOW_OWNER_TOKEN=true to display it)")
 	}
 	fmt.Printf("Allowed roots: %s\n", strings.Join(allowedRoots, ", "))
+	fmt.Printf("Widget mode: %s\n", activeWidgetMode)
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)

@@ -54,77 +54,83 @@ type toolStats struct {
 }
 
 type workspaceView struct {
-	Kind      string     `json:"kind"`
-	Title     string     `json:"title"`
-	Summary   string     `json:"summary,omitempty"`
-	Path      string     `json:"path"`
-	Files     []viewFile `json:"files"`
-	Stats     toolStats  `json:"stats"`
-	Truncated bool       `json:"truncated,omitempty"`
+	Kind        string     `json:"kind"`
+	Title       string     `json:"title"`
+	Summary     string     `json:"summary,omitempty"`
+	WorkspaceID string     `json:"workspaceId"`
+	Path        string     `json:"path"`
+	Files       []viewFile `json:"files"`
+	Stats       toolStats  `json:"stats"`
+	Truncated   bool       `json:"truncated,omitempty"`
 }
 
 type workspaceModelView struct {
-	Kind      string     `json:"kind"`
-	Title     string     `json:"title"`
-	Summary   string     `json:"summary,omitempty"`
-	Path      string     `json:"path"`
-	Files     []viewFile `json:"files"`
-	Stats     toolStats  `json:"stats"`
-	Truncated bool       `json:"truncated,omitempty"`
+	Kind        string     `json:"kind"`
+	Title       string     `json:"title"`
+	Summary     string     `json:"summary,omitempty"`
+	WorkspaceID string     `json:"workspaceId"`
+	Path        string     `json:"path"`
+	Files       []viewFile `json:"files"`
+	Stats       toolStats  `json:"stats"`
+	Truncated   bool       `json:"truncated,omitempty"`
 }
 
 type fileView struct {
-	Kind      string    `json:"kind"`
-	Title     string    `json:"title"`
-	Summary   string    `json:"summary,omitempty"`
-	Path      string    `json:"path"`
-	Language  string    `json:"language,omitempty"`
-	Content   string    `json:"content"`
-	Stats     toolStats `json:"stats"`
-	Truncated bool      `json:"truncated,omitempty"`
+	Kind        string    `json:"kind"`
+	Title       string    `json:"title"`
+	Summary     string    `json:"summary,omitempty"`
+	WorkspaceID string    `json:"workspaceId"`
+	Path        string    `json:"path"`
+	Language    string    `json:"language,omitempty"`
+	Content     string    `json:"content"`
+	Stats       toolStats `json:"stats"`
+	Truncated   bool      `json:"truncated,omitempty"`
 }
 
 type diffView struct {
-	Kind      string    `json:"kind"`
-	Title     string    `json:"title"`
-	Summary   string    `json:"summary,omitempty"`
-	Path      string    `json:"path"`
-	Operation string    `json:"operation"`
-	Diff      string    `json:"diff"`
-	Stats     toolStats `json:"stats"`
-	Truncated bool      `json:"truncated,omitempty"`
+	Kind        string    `json:"kind"`
+	Title       string    `json:"title"`
+	Summary     string    `json:"summary,omitempty"`
+	WorkspaceID string    `json:"workspaceId"`
+	Path        string    `json:"path"`
+	Operation   string    `json:"operation"`
+	Diff        string    `json:"diff"`
+	Stats       toolStats `json:"stats"`
+	Truncated   bool      `json:"truncated,omitempty"`
 }
 
 type commandView struct {
-	Kind      string    `json:"kind"`
-	Title     string    `json:"title"`
-	Summary   string    `json:"summary,omitempty"`
-	Path      string    `json:"path"`
-	Command   string    `json:"command"`
-	Output    string    `json:"output"`
-	Success   bool      `json:"success"`
-	Stats     toolStats `json:"stats"`
-	Truncated bool      `json:"truncated,omitempty"`
+	Kind        string    `json:"kind"`
+	Title       string    `json:"title"`
+	Summary     string    `json:"summary,omitempty"`
+	WorkspaceID string    `json:"workspaceId"`
+	Path        string    `json:"path"`
+	Command     string    `json:"command"`
+	Output      string    `json:"output"`
+	Success     bool      `json:"success"`
+	Stats       toolStats `json:"stats"`
+	Truncated   bool      `json:"truncated,omitempty"`
 }
 
 func registerTools(s *server.MCPServer) {
 	openWorkspaceTool := mcp.NewTool("open_workspace",
 		mcp.WithTitleAnnotation("Open workspace"),
-		mcp.WithDescription("Inspect a project folder under an allowed root and return a compact repository tree."),
-		mcp.WithString("path", mcp.Required(), mcp.Description("Absolute path inside an allowed root")),
+		mcp.WithDescription("Open one project folder and return a reusable workspace_id. Call this once per project, then use relative paths with every other DevSpace tool."),
+		mcp.WithString("path", mcp.Required(), mcp.Description("Absolute project directory inside an allowed root")),
 		mcp.WithOutputSchema[workspaceModelView](),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithDestructiveHintAnnotation(false),
 		mcp.WithIdempotentHintAnnotation(true),
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
-	setWidgetMeta(&openWorkspaceTool, workspaceWidgetURI, "Opening repository", "Repository ready")
+	maybeSetWidgetMeta("open_workspace", &openWorkspaceTool, workspaceWidgetURI, "Opening workspace", "Workspace ready")
 	s.AddTool(openWorkspaceTool, handleOpenWorkspace)
 
 	readTool := mcp.NewTool("read",
 		mcp.WithTitleAnnotation("Read file"),
-		mcp.WithDescription("Read a UTF-8 text file inside an allowed root with line numbers and bounded output."),
-		mcp.WithString("path", mcp.Required(), mcp.Description("Absolute file path inside an allowed root")),
+		mcp.WithDescription("Read one UTF-8 file from an open workspace. Reuse the workspace_id from open_workspace and pass a relative path."),
+		mcp.WithString("workspace_id", mcp.Required(), mcp.Description("Workspace identifier returned by open_workspace")),
+		mcp.WithString("path", mcp.Required(), mcp.Description("File path relative to the workspace root")),
 		mcp.WithNumber("max_bytes", mcp.Description("Optional response limit in bytes, default 65536 and maximum 262144")),
 		mcp.WithOutputSchema[fileView](),
 		mcp.WithReadOnlyHintAnnotation(true),
@@ -132,13 +138,14 @@ func registerTools(s *server.MCPServer) {
 		mcp.WithIdempotentHintAnnotation(true),
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
-	setWidgetMeta(&readTool, fileWidgetURI, "Reading file", "File loaded")
+	maybeSetWidgetMeta("read", &readTool, fileWidgetURI, "Reading file", "File ready")
 	s.AddTool(readTool, handleRead)
 
 	writeTool := mcp.NewTool("write",
 		mcp.WithTitleAnnotation("Write file"),
-		mcp.WithDescription("Atomically write a UTF-8 text file inside an allowed root and return a compact unified diff."),
-		mcp.WithString("path", mcp.Required(), mcp.Description("Absolute file path inside an allowed root")),
+		mcp.WithDescription("Atomically create or replace one UTF-8 file in an open workspace. Use edit for a small unique replacement."),
+		mcp.WithString("workspace_id", mcp.Required(), mcp.Description("Workspace identifier returned by open_workspace")),
+		mcp.WithString("path", mcp.Required(), mcp.Description("File path relative to the workspace root")),
 		mcp.WithString("content", mcp.Required(), mcp.Description("Complete replacement content")),
 		mcp.WithOutputSchema[diffView](),
 		mcp.WithReadOnlyHintAnnotation(false),
@@ -146,13 +153,14 @@ func registerTools(s *server.MCPServer) {
 		mcp.WithIdempotentHintAnnotation(true),
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
-	setWidgetMeta(&writeTool, diffWidgetURI, "Writing file", "File written")
+	maybeSetWidgetMeta("write", &writeTool, diffWidgetURI, "Writing file", "File written")
 	s.AddTool(writeTool, handleWrite)
 
 	editTool := mcp.NewTool("edit",
 		mcp.WithTitleAnnotation("Edit file"),
-		mcp.WithDescription("Safely replace one unique text occurrence in a file and return a compact unified diff."),
-		mcp.WithString("path", mcp.Required(), mcp.Description("Absolute file path inside an allowed root")),
+		mcp.WithDescription("Replace one exact, unique UTF-8 text occurrence in an open workspace file."),
+		mcp.WithString("workspace_id", mcp.Required(), mcp.Description("Workspace identifier returned by open_workspace")),
+		mcp.WithString("path", mcp.Required(), mcp.Description("File path relative to the workspace root")),
 		mcp.WithString("old_string", mcp.Required(), mcp.Description("Exact unique text to replace")),
 		mcp.WithString("new_string", mcp.Required(), mcp.Description("Replacement text")),
 		mcp.WithOutputSchema[diffView](),
@@ -161,14 +169,15 @@ func registerTools(s *server.MCPServer) {
 		mcp.WithIdempotentHintAnnotation(false),
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
-	setWidgetMeta(&editTool, diffWidgetURI, "Applying edit", "Edit applied")
+	maybeSetWidgetMeta("edit", &editTool, diffWidgetURI, "Applying edit", "Edit applied")
 	s.AddTool(editTool, handleEdit)
 
 	bashTool := mcp.NewTool("bash",
 		mcp.WithTitleAnnotation("Run command"),
-		mcp.WithDescription("Run a shell command in an allowed project directory with cancellation, timeout, and bounded output."),
+		mcp.WithDescription("Run a bounded shell command inside an open workspace for inspection, tests, builds, Git, or package scripts. Do not modify files through shell redirection when write or edit can be used."),
+		mcp.WithString("workspace_id", mcp.Required(), mcp.Description("Workspace identifier returned by open_workspace")),
 		mcp.WithString("command", mcp.Required(), mcp.Description("Shell command to run")),
-		mcp.WithString("cwd", mcp.Description("Optional working directory inside an allowed root")),
+		mcp.WithString("cwd", mcp.Description("Optional working directory relative to the workspace root")),
 		mcp.WithNumber("timeout_seconds", mcp.Description("Optional timeout, default 120 and maximum 300 seconds")),
 		mcp.WithOutputSchema[commandView](),
 		mcp.WithReadOnlyHintAnnotation(false),
@@ -176,8 +185,32 @@ func registerTools(s *server.MCPServer) {
 		mcp.WithIdempotentHintAnnotation(false),
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
-	setWidgetMeta(&bashTool, commandWidgetURI, "Running command", "Command finished")
+	maybeSetWidgetMeta("bash", &bashTool, commandWidgetURI, "Running command", "Command finished")
 	s.AddTool(bashTool, handleBash)
+
+	if activeWidgetMode == widgetModeChanges {
+		showChangesTool := mcp.NewTool("show_changes",
+			mcp.WithTitleAnnotation("Review changes"),
+			mcp.WithDescription("Render one aggregate review after the final write or edit in the current turn. Call exactly once before the final response, not after every file change."),
+			mcp.WithString("workspace_id", mcp.Required(), mcp.Description("Workspace identifier returned by open_workspace")),
+			mcp.WithOutputSchema[changesModelView](),
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithIdempotentHintAnnotation(false),
+			mcp.WithOpenWorldHintAnnotation(false),
+		)
+		maybeSetWidgetMeta("show_changes", &showChangesTool, changesWidgetURI, "Preparing review", "Changes ready")
+		s.AddTool(showChangesTool, handleShowChanges)
+	}
+}
+
+func maybeSetWidgetMeta(toolName string, tool *mcp.Tool, resourceURI, invoking, invoked string) {
+	enabled := activeWidgetMode == widgetModeFull ||
+		(activeWidgetMode == widgetModeChanges && (toolName == "open_workspace" || toolName == "show_changes"))
+	if !enabled {
+		return
+	}
+	setWidgetMeta(tool, resourceURI, invoking, invoked)
 }
 
 func setWidgetMeta(tool *mcp.Tool, resourceURI, invoking, invoked string) {
@@ -193,12 +226,24 @@ func setWidgetMeta(tool *mcp.Tool, resourceURI, invoking, invoked string) {
 	})
 }
 
+func toolHasWidget(toolName string) bool {
+	return activeWidgetMode == widgetModeFull ||
+		(activeWidgetMode == widgetModeChanges && (toolName == "open_workspace" || toolName == "show_changes"))
+}
+
 func newWidgetToolResult(modelContent, widgetContent any, fallback string) *mcp.CallToolResult {
 	result := mcp.NewToolResultStructured(modelContent, fallback)
 	result.Meta = mcp.NewMetaFromMap(map[string]any{
 		"devspace/widgetData": widgetContent,
 	})
 	return result
+}
+
+func newToolResult(toolName string, modelContent, widgetContent any, fallback string) *mcp.CallToolResult {
+	if toolHasWidget(toolName) {
+		return newWidgetToolResult(modelContent, widgetContent, fallback)
+	}
+	return mcp.NewToolResultStructured(modelContent, fallback)
 }
 
 func handleOpenWorkspace(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -214,41 +259,42 @@ func handleOpenWorkspace(_ context.Context, req mcp.CallToolRequest) (*mcp.CallT
 		return mcp.NewToolResultError("not a directory: " + rp), nil
 	}
 
+	state := registerWorkspace(rp)
 	files, stats, truncated, err := repositoryTree(rp)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	widgetView := workspaceView{
-		Kind:      "workspace",
-		Title:     filepath.Base(rp),
-		Summary:   fmt.Sprintf("%d files and %d directories", stats.Files, stats.Directories),
-		Path:      rp,
-		Files:     files,
-		Stats:     stats,
-		Truncated: truncated,
+		Kind:        "workspace",
+		Title:       filepath.Base(rp),
+		Summary:     fmt.Sprintf("%d files · %d folders", stats.Files, stats.Directories),
+		WorkspaceID: state.ID,
+		Path:        rp,
+		Files:       files,
+		Stats:       stats,
+		Truncated:   truncated,
 	}
 	modelFiles := files
 	if len(modelFiles) > modelWorkspaceEntries {
 		modelFiles = modelFiles[:modelWorkspaceEntries]
 	}
 	modelView := workspaceModelView{
-		Kind:      widgetView.Kind,
-		Title:     widgetView.Title,
-		Summary:   widgetView.Summary,
-		Path:      widgetView.Path,
-		Files:     modelFiles,
-		Stats:     widgetView.Stats,
-		Truncated: widgetView.Truncated || len(files) > len(modelFiles),
+		Kind:        widgetView.Kind,
+		Title:       widgetView.Title,
+		Summary:     widgetView.Summary,
+		WorkspaceID: widgetView.WorkspaceID,
+		Path:        widgetView.Path,
+		Files:       modelFiles,
+		Stats:       widgetView.Stats,
+		Truncated:   widgetView.Truncated || len(files) > len(modelFiles),
 	}
-	fallback := fmt.Sprintf("Opened workspace %s with %d files and %d directories.", rp, stats.Files, stats.Directories)
-	if truncated {
-		fallback += " The repository view was truncated."
-	}
-	return newWidgetToolResult(modelView, widgetView, fallback), nil
+	fallback := fmt.Sprintf("Workspace %s opened as %s · %d files · %d folders.", filepath.Base(rp), state.ID, stats.Files, stats.Directories)
+	return newToolResult("open_workspace", modelView, widgetView, fallback), nil
 }
 
 func handleRead(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	rp, err := resolvePath(argStr(req, "path"))
+	workspaceID := argStr(req, "workspace_id")
+	_, rp, err := resolveWorkspacePath(workspaceID, argStr(req, "path"))
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -259,25 +305,28 @@ func handleRead(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult
 	}
 	numbered := withLineNumbers(content)
 	lines := countLines(content)
+	relative := filepath.ToSlash(argStr(req, "path"))
 	view := fileView{
-		Kind:      "file",
-		Title:     filepath.Base(rp),
-		Summary:   fmt.Sprintf("%d lines, %d bytes shown", lines, len(content)),
-		Path:      rp,
-		Language:  languageFromPath(rp),
-		Content:   numbered,
-		Stats:     toolStats{Bytes: info.Size(), Lines: lines},
-		Truncated: truncated,
+		Kind:        "file",
+		Title:       filepath.Base(rp),
+		Summary:     fmt.Sprintf("%d lines · %d bytes shown", lines, len(content)),
+		WorkspaceID: workspaceID,
+		Path:        relative,
+		Language:    languageFromPath(rp),
+		Content:     numbered,
+		Stats:       toolStats{Bytes: info.Size(), Lines: lines},
+		Truncated:   truncated,
 	}
-	fallback := fmt.Sprintf("Read %s (%d lines).", rp, lines)
+	fallback := fmt.Sprintf("Read %s · %d lines.", relative, lines)
 	if truncated {
-		fallback += fmt.Sprintf(" Output was limited to %d bytes.", limit)
+		fallback += fmt.Sprintf(" Limited to %d bytes.", limit)
 	}
-	return mcp.NewToolResultStructured(view, fallback), nil
+	return newToolResult("read", view, view, fallback), nil
 }
 
 func handleWrite(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	rp, err := resolvePath(argStr(req, "path"))
+	workspaceID := argStr(req, "workspace_id")
+	state, rp, err := resolveWorkspacePath(workspaceID, argStr(req, "path"))
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -289,25 +338,38 @@ func handleWrite(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResul
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
+	_, statErr := os.Stat(rp)
+	existed := statErr == nil
+	if statErr != nil && !os.IsNotExist(statErr) {
+		return mcp.NewToolResultError(statErr.Error()), nil
+	}
+	if activeWidgetMode == widgetModeChanges {
+		if err := state.recordOriginal(rp, fileSnapshot{Exists: existed, Content: before}); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+	}
 	if err := atomicWriteFile(rp, []byte(after), mode); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	diff, added, removed, truncated := unifiedDiff(filepath.Base(rp), before, after)
+	relative, _ := state.relativePath(rp)
+	diff, added, removed, truncated := unifiedDiff(relative, before, after)
 	view := diffView{
-		Kind:      "write",
-		Title:     "Written " + filepath.Base(rp),
-		Summary:   fmt.Sprintf("%d additions and %d deletions", added, removed),
-		Path:      rp,
-		Operation: "write",
-		Diff:      diff,
-		Stats:     toolStats{Bytes: int64(len(after)), Lines: countLines(after), Added: added, Removed: removed},
-		Truncated: truncated,
+		Kind:        "write",
+		Title:       "Written " + filepath.Base(rp),
+		Summary:     fmt.Sprintf("+%d −%d", added, removed),
+		WorkspaceID: workspaceID,
+		Path:        relative,
+		Operation:   "write",
+		Diff:        diff,
+		Stats:       toolStats{Bytes: int64(len(after)), Lines: countLines(after), Added: added, Removed: removed},
+		Truncated:   truncated,
 	}
-	return mcp.NewToolResultStructured(view, fmt.Sprintf("Written %s. +%d -%d.", rp, added, removed)), nil
+	return newToolResult("write", view, view, fmt.Sprintf("Written %s · +%d −%d.", relative, added, removed)), nil
 }
 
 func handleEdit(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	rp, err := resolvePath(argStr(req, "path"))
+	workspaceID := argStr(req, "workspace_id")
+	state, rp, err := resolveWorkspacePath(workspaceID, argStr(req, "path"))
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -335,39 +397,39 @@ func handleEdit(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
+	if activeWidgetMode == widgetModeChanges {
+		if err := state.recordOriginal(rp, fileSnapshot{Exists: true, Content: before}); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+	}
 	if err := atomicWriteFile(rp, []byte(after), info.Mode().Perm()); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	diff, added, removed, truncated := unifiedDiff(filepath.Base(rp), before, after)
+	relative, _ := state.relativePath(rp)
+	diff, added, removed, truncated := unifiedDiff(relative, before, after)
 	view := diffView{
-		Kind:      "edit",
-		Title:     "Edited " + filepath.Base(rp),
-		Summary:   fmt.Sprintf("%d additions and %d deletions", added, removed),
-		Path:      rp,
-		Operation: "edit",
-		Diff:      diff,
-		Stats:     toolStats{Bytes: int64(len(after)), Lines: countLines(after), Added: added, Removed: removed, Occurrences: occurrences},
-		Truncated: truncated,
+		Kind:        "edit",
+		Title:       "Edited " + filepath.Base(rp),
+		Summary:     fmt.Sprintf("+%d −%d", added, removed),
+		WorkspaceID: workspaceID,
+		Path:        relative,
+		Operation:   "edit",
+		Diff:        diff,
+		Stats:       toolStats{Bytes: int64(len(after)), Lines: countLines(after), Added: added, Removed: removed, Occurrences: occurrences},
+		Truncated:   truncated,
 	}
-	return mcp.NewToolResultStructured(view, fmt.Sprintf("Edited %s. +%d -%d.", rp, added, removed)), nil
+	return newToolResult("edit", view, view, fmt.Sprintf("Edited %s · +%d −%d.", relative, added, removed)), nil
 }
 
 func handleBash(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	workspaceID := argStr(req, "workspace_id")
 	command := strings.TrimSpace(argStr(req, "command"))
 	if command == "" {
 		return mcp.NewToolResultError("empty command"), nil
 	}
-	cwd := allowedRoots[0]
-	if value := argStr(req, "cwd"); value != "" {
-		resolved, err := resolvePath(value)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-		info, err := os.Stat(resolved)
-		if err != nil || !info.IsDir() {
-			return mcp.NewToolResultError("cwd is not a directory: " + resolved), nil
-		}
-		cwd = resolved
+	_, cwd, err := resolveWorkspaceDirectory(workspaceID, argStr(req, "cwd"))
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
 	}
 	timeoutSeconds := clampInt(argInt(req, "timeout_seconds", defaultCommandSecs), 1, maxCommandSecs)
 	runCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
@@ -386,22 +448,41 @@ func handleBash(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResu
 		output = runErr.Error()
 	}
 
+	state, _ := getWorkspace(workspaceID)
+	relativeCWD, _ := state.relativePath(cwd)
+	if relativeCWD == "" {
+		relativeCWD = "."
+	}
 	view := commandView{
-		Kind:      "command",
-		Title:     "Command finished",
-		Summary:   fmt.Sprintf("Exit %d in %s", exitCode, duration.Round(time.Millisecond)),
-		Path:      cwd,
-		Command:   command,
-		Output:    output,
-		Success:   exitCode == 0,
-		Stats:     toolStats{DurationMS: duration.Milliseconds(), ExitCode: intPointer(exitCode), Bytes: int64(len(output))},
-		Truncated: truncated,
+		Kind:        "command",
+		Title:       "Command finished",
+		Summary:     fmt.Sprintf("Exit %d · %s", exitCode, duration.Round(time.Millisecond)),
+		WorkspaceID: workspaceID,
+		Path:        relativeCWD,
+		Command:     command,
+		Output:      output,
+		Success:     exitCode == 0,
+		Stats:       toolStats{DurationMS: duration.Milliseconds(), ExitCode: intPointer(exitCode), Bytes: int64(len(output))},
+		Truncated:   truncated,
 	}
-	fallback := fmt.Sprintf("Command finished with exit code %d in %s.", exitCode, duration.Round(time.Millisecond))
+	fallback := fmt.Sprintf("Exit %d · %s.", exitCode, duration.Round(time.Millisecond))
 	if truncated {
-		fallback += " Output was truncated."
+		fallback += " Output truncated."
 	}
-	return mcp.NewToolResultStructured(view, fallback), nil
+	return newToolResult("bash", view, view, fallback), nil
+}
+
+func handleShowChanges(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	workspaceID := argStr(req, "workspace_id")
+	state, err := getWorkspace(workspaceID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	model, widget, err := state.buildChangeReview()
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return newToolResult("show_changes", model, widget, model.Summary+"."), nil
 }
 
 func intPointer(value int) *int {

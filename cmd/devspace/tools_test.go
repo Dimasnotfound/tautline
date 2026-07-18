@@ -102,8 +102,9 @@ func TestWidgetDocumentsAreLightweight(t *testing.T) {
 		fileWidgetURI:      fileWidgetHTML(),
 		diffWidgetURI:      diffWidgetHTML(),
 		commandWidgetURI:   commandWidgetHTML(),
+		changesWidgetURI:   changesWidgetHTML(),
 	}
-	if len(widgets) != 4 {
+	if len(widgets) != 5 {
 		t.Fatalf("unexpected widget count: %d", len(widgets))
 	}
 	for uri, html := range widgets {
@@ -181,5 +182,55 @@ func TestResolvePathRejectsSymlinkEscape(t *testing.T) {
 
 	if _, err := resolvePath(filepath.Join(link, "secret.txt")); err == nil {
 		t.Fatal("symlink escape outside an allowed root was accepted")
+	}
+}
+
+func TestParseWidgetMode(t *testing.T) {
+	for input, expected := range map[string]widgetMode{"": widgetModeChanges, "changes": widgetModeChanges, "full": widgetModeFull, "off": widgetModeOff} {
+		actual, err := parseWidgetMode(input)
+		if err != nil || actual != expected {
+			t.Fatalf("parseWidgetMode(%q)=%q, %v; want %q", input, actual, err, expected)
+		}
+	}
+	if _, err := parseWidgetMode("busy"); err == nil {
+		t.Fatal("invalid widget mode was accepted")
+	}
+}
+
+func TestWorkspaceRelativePathAndCheckpoint(t *testing.T) {
+	root, err := canonicalPath(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := registerWorkspace(root)
+	path := filepath.Join(root, "sample.txt")
+	if err := os.WriteFile(path, []byte("before\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.recordOriginal(path, fileSnapshot{Exists: true, Content: "before\n"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("after\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	model, widget, err := state.buildChangeReview()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if model.Stats.Files != 1 || model.Stats.Added != 1 || model.Stats.Removed != 1 {
+		t.Fatalf("unexpected review stats: %+v", model.Stats)
+	}
+	if !strings.Contains(widget.Diff, "+after") || !strings.Contains(widget.Diff, "-before") {
+		t.Fatalf("aggregate diff missing content:\n%s", widget.Diff)
+	}
+	second, _, err := state.buildChangeReview()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !second.Empty {
+		t.Fatal("show_changes did not advance the review checkpoint")
+	}
+	if _, _, err := resolveWorkspacePath(state.ID, "../escape.txt"); err == nil {
+		t.Fatal("workspace-relative path escape was accepted")
 	}
 }
