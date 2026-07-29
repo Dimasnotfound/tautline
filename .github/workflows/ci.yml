@@ -9,32 +9,71 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: Go ${{ matrix.goos }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            goos: linux
-          - os: windows-latest
-            goos: windows
+  quality:
+    name: Quality gates
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
-      - name: Check formatting
-        shell: bash
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify formatting
         run: test -z "$(gofmt -l .)"
+
+      - name: Check Python bridge
+        run: python -m py_compile cmd/tautline/bridge/hermes_skill_bridge.py
+
+      - name: Check dashboard JavaScript
+        run: node --check cmd/tautline/web/app.js
+
       - name: Test
-        run: go test ./...
+        env:
+          TAUTLINE_WIDGET_DOMAIN: ''
+          TAUTLINE_PUBLIC_BASE_URL: ''
+        run: go test -count=1 ./...
+
       - name: Vet
         run: go vet ./...
-      - name: Build
-        run: go build -trimpath ./cmd/devspace
+
+      - name: Build Tautline
+        run: go build -trimpath -o bin/tautline ./cmd/tautline
+
+      - name: Build Lightpanda shim
+        run: go build -trimpath -o bin/lightpanda-shim ./cmd/lightpanda-shim
+
+  windows-build:
+    name: Windows build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test
+        env:
+          TAUTLINE_WIDGET_DOMAIN: ''
+          TAUTLINE_PUBLIC_BASE_URL: ''
+        run: go test -count=1 ./...
+
+      - name: Build Tautline
+        run: go build -trimpath -o bin/tautline.exe ./cmd/tautline
+
+      - name: Build Lightpanda shim
+        run: go build -trimpath -o bin/lightpanda-shim.exe ./cmd/lightpanda-shim
 
   secret-scan:
     name: Secret scan

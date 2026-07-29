@@ -1,7 +1,7 @@
 package main
 
 func fileWidgetHTML() string {
-	return widgetDocument("DevSpace file viewer", fileRendererJS)
+	return widgetDocument("Tautline file viewer", fileRendererJS)
 }
 
 const fileRendererJS = `

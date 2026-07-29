@@ -1,49 +1,56 @@
-# Codex-style Coding Workflow
+# Tautline coding workflow
 
-DevSpace v1.4 uses a task-oriented loop instead of rendering a custom widget for every low-level tool call.
+Tautline v2.1.0 uses a context-safe, task-oriented loop. The default `changes` widget mode avoids rendering a large custom card for every low-level operation.
 
-## Default loop
+## Standard loop
 
-1. Call `open_workspace` once with an absolute project directory.
-2. Reuse the returned `workspace_id` for the rest of the task.
-3. Pass relative paths to `read`, `write`, and `edit`.
-4. Use `bash` for inspection, tests, builds, Git, and package scripts.
-5. Make file changes through `write` or `edit` so DevSpace can track the original content.
-6. After the final file change, call `show_changes` exactly once.
-7. Run verification and provide a short final response.
+1. Match relevant installed Hermes skills before non-trivial work.
+2. Call `open_workspace` once for each project folder.
+3. Reuse the returned `workspace_id` for every later workspace call.
+4. Search before reading large files.
+5. Read only the evidence required for the current change.
+6. Use `write` or `edit` for text modifications.
+7. Use `bash` for tests, builds, Git inspection, and bounded terminal work.
+8. Use `artifact_read` when command output is stored as a secure artifact.
+9. Call `show_changes` exactly once after the final modification.
+10. Run current repository quality gates before reporting completion.
 
-Example:
+## Workspace rules
 
-```text
-open_workspace(path="D:\Projects\demo")
-→ workspace_id: ws_81cce3c914d0
-
-read(workspace_id="ws_81cce3c914d0", path="src/main.go")
-edit(workspace_id="ws_81cce3c914d0", path="src/main.go", ...)
-bash(workspace_id="ws_81cce3c914d0", command="go test ./...")
-show_changes(workspace_id="ws_81cce3c914d0")
-```
+- Use paths relative to the opened workspace.
+- Do not repeatedly open the same project.
+- Do not access paths outside `TAUTLINE_ALLOWED_ROOTS`.
+- Prefer search results and line windows over repeatedly loading complete large files.
+- Preserve freshness hashes when an edit depends on an earlier read.
+- Do not use shell redirection for text edits when `write` or `edit` is available.
 
 ## Widget modes
 
-| Mode | Custom widgets | Use case |
-|---|---|---|
-| `changes` | Workspace open + final aggregate review | Recommended, clean coding workflow |
-| `full` | Workspace, file, individual diff, and command | Debugging or users who want every visual card |
-| `off` | None | Plain MCP clients or minimal ChatGPT UI |
-
-Configure the mode in `.env`:
-
-```dotenv
-DEVSPACE_WIDGETS=changes
+```env
+TAUTLINE_WIDGETS=changes
 ```
 
-## Review checkpoints
+- `changes` enables the compact workspace card and one final aggregate review.
+- `full` enables workspace, file, diff, command, and change-review widgets.
+- `off` disables custom widgets while preserving readable text output.
 
-The first `write` or `edit` to a file stores its original content for the current checkpoint. Further edits to the same file preserve that same original snapshot. `show_changes` compares every tracked file against its current content, renders one aggregate diff, and advances the checkpoint.
+## Sub-agent workflow
 
-Calling `show_changes` a second time without another modification returns `No pending changes`.
+Use sub-agents only for independent work that benefits from parallel analysis.
 
-## Important limitation
+1. Call `list_subagents` and inspect the global enabled state, capacity, default model, and allowed models.
+2. Choose a model from the returned allowlist.
+3. Call `delegate_task` with complete instructions and the active `workspace_id` for read-only workspace access.
+4. Poll the same `run_id` with `get_agent_run`.
+5. Use `cancel_agent_run` when that exact run must stop.
+6. Review delegated output before applying any repository modification.
 
-Changes made through arbitrary shell commands are not automatically tracked by the in-memory review checkpoint. Use `write` and `edit` for file modifications. Shell commands should be used for verification and project tooling.
+New delegation is rejected when the global switch is off, no enabled slot is available, or the requested model is outside the allowlist. Tautline also rejects a completed result when 9Router reports an actual model outside the allowlist.
+
+Do not create replacement runs merely because an active run is slow. Image tasks require an image-enabled slot, `requires_images=true`, and explicitly verified model capability.
+
+## Change review
+
+`show_changes` is an aggregate checkpoint, not a substitute for testing. Call it once after the final write or edit so the user can review the complete repository delta.
+
+After the review card appears, run the project-specific format, test, lint, vet, type-check, and build commands on the current working tree. Do not rely on stale output produced before the latest edit.

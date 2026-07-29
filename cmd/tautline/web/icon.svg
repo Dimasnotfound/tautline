@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Tautline">
+  <rect width="64" height="64" rx="16" fill="#101113"/>
+  <path d="M18 19h28v9H36v19h-9V28h-9z" fill="#f4f5f6"/>
+  <rect x="38" y="36" width="9" height="11" rx="3" fill="#6972e5"/>
+</svg>

@@ -76,15 +76,22 @@ type workspaceModelView struct {
 }
 
 type fileView struct {
-	Kind        string    `json:"kind"`
-	Title       string    `json:"title"`
-	Summary     string    `json:"summary,omitempty"`
-	WorkspaceID string    `json:"workspaceId"`
-	Path        string    `json:"path"`
-	Language    string    `json:"language,omitempty"`
-	Content     string    `json:"content"`
-	Stats       toolStats `json:"stats"`
-	Truncated   bool      `json:"truncated,omitempty"`
+	Kind           string    `json:"kind"`
+	Title          string    `json:"title"`
+	Summary        string    `json:"summary,omitempty"`
+	WorkspaceID    string    `json:"workspaceId"`
+	Path           string    `json:"path"`
+	Language       string    `json:"language,omitempty"`
+	Content        string    `json:"content"`
+	Stats          toolStats `json:"stats"`
+	Truncated      bool      `json:"truncated,omitempty"`
+	SHA256         string    `json:"sha256,omitempty"`
+	StartLine      int       `json:"startLine,omitempty"`
+	EndLine        int       `json:"endLine,omitempty"`
+	TotalLines     int       `json:"totalLines,omitempty"`
+	NextCursor     string    `json:"nextCursor,omitempty"`
+	PreviousCursor string    `json:"previousCursor,omitempty"`
+	ModifiedUnix   int64     `json:"modifiedUnix,omitempty"`
 }
 
 type diffView struct {
@@ -100,22 +107,27 @@ type diffView struct {
 }
 
 type commandView struct {
-	Kind        string    `json:"kind"`
-	Title       string    `json:"title"`
-	Summary     string    `json:"summary,omitempty"`
-	WorkspaceID string    `json:"workspaceId"`
-	Path        string    `json:"path"`
-	Command     string    `json:"command"`
-	Output      string    `json:"output"`
-	Success     bool      `json:"success"`
-	Stats       toolStats `json:"stats"`
-	Truncated   bool      `json:"truncated,omitempty"`
+	Kind               string             `json:"kind"`
+	Title              string             `json:"title"`
+	Summary            string             `json:"summary,omitempty"`
+	WorkspaceID        string             `json:"workspaceId"`
+	Path               string             `json:"path"`
+	Command            string             `json:"command"`
+	Output             string             `json:"output"`
+	Success            bool               `json:"success"`
+	Stats              toolStats          `json:"stats"`
+	Truncated          bool               `json:"truncated,omitempty"`
+	Artifact           *artifactReference `json:"artifact,omitempty"`
+	IncludedRanges     []lineRange        `json:"includedRanges,omitempty"`
+	OmittedLines       int                `json:"omittedLines,omitempty"`
+	Redacted           bool               `json:"redacted,omitempty"`
+	StorageUnavailable bool               `json:"storageUnavailable,omitempty"`
 }
 
 func registerTools(s *server.MCPServer) {
 	openWorkspaceTool := mcp.NewTool("open_workspace",
 		mcp.WithTitleAnnotation("Open workspace"),
-		mcp.WithDescription("Open one project folder and return a reusable workspace_id. Call this once per project, then use relative paths with every other DevSpace tool."),
+		mcp.WithDescription("Open one project folder and return a reusable workspace_id. Call this once per project, then use relative paths with every other Tautline workspace tool."),
 		mcp.WithString("path", mcp.Required(), mcp.Description("Absolute project directory inside an allowed root")),
 		mcp.WithOutputSchema[workspaceModelView](),
 		mcp.WithReadOnlyHintAnnotation(true),
@@ -126,12 +138,39 @@ func registerTools(s *server.MCPServer) {
 	maybeSetWidgetMeta("open_workspace", &openWorkspaceTool, workspaceWidgetURI, "Opening workspace", "Workspace ready")
 	s.AddTool(openWorkspaceTool, handleOpenWorkspace)
 
+	searchTool := mcp.NewTool("search",
+		mcp.WithTitleAnnotation("Search workspace"),
+		mcp.WithDescription("Search UTF-8 files in an open workspace before reading large files. Returns bounded exact matches with line numbers, context, and file hashes; it never modifies files."),
+		mcp.WithString("workspace_id", mcp.Required(), mcp.Description("Workspace identifier returned by open_workspace")),
+		mcp.WithString("query", mcp.Required(), mcp.Description("Literal text or regular expression to find")),
+		mcp.WithBoolean("regex", mcp.Description("Interpret query as a Go regular expression")),
+		mcp.WithBoolean("case_sensitive", mcp.Description("Use case-sensitive matching; default false")),
+		mcp.WithString("glob", mcp.Description("Optional comma-separated file globs such as *.go,internal/*.go")),
+		mcp.WithNumber("context_lines", mcp.Description("Exact surrounding lines per match, default 2 and maximum 12")),
+		mcp.WithNumber("max_results", mcp.Description("Maximum matches, default 20 and maximum 100")),
+		mcp.WithBoolean("include_hidden", mcp.Description("Include hidden files and directories not otherwise excluded")),
+		mcp.WithOutputSchema[searchView](),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(true),
+		mcp.WithOpenWorldHintAnnotation(false),
+	)
+	maybeSetWidgetMeta("search", &searchTool, toolCardWidgetURI, "Searching workspace", "Search complete")
+	s.AddTool(searchTool, handleWorkspaceSearch)
+
 	readTool := mcp.NewTool("read",
 		mcp.WithTitleAnnotation("Read file"),
-		mcp.WithDescription("Read one UTF-8 file from an open workspace. Reuse the workspace_id from open_workspace and pass a relative path."),
+		mcp.WithDescription("Read one UTF-8 file from an open workspace. Legacy calls still read from the start. For large files, use start_line/end_line, head, tail, max_lines, or the returned cursor; pass expected_sha256 to reject stale reads."),
 		mcp.WithString("workspace_id", mcp.Required(), mcp.Description("Workspace identifier returned by open_workspace")),
 		mcp.WithString("path", mcp.Required(), mcp.Description("File path relative to the workspace root")),
-		mcp.WithNumber("max_bytes", mcp.Description("Optional response limit in bytes, default 65536 and maximum 262144")),
+		mcp.WithNumber("max_bytes", mcp.Description("Legacy response limit in bytes, default 65536 and maximum 262144")),
+		mcp.WithNumber("start_line", mcp.Description("Optional first line for a context-safe window")),
+		mcp.WithNumber("end_line", mcp.Description("Optional last line for a context-safe window")),
+		mcp.WithNumber("head", mcp.Description("Read the first N lines, maximum 2000")),
+		mcp.WithNumber("tail", mcp.Description("Read the last N lines, maximum 2000")),
+		mcp.WithNumber("max_lines", mcp.Description("Window size when end_line is omitted, default 200 and maximum 2000")),
+		mcp.WithString("cursor", mcp.Description("Continuation cursor returned by an earlier read")),
+		mcp.WithString("expected_sha256", mcp.Description("Reject the read if the current file hash differs")),
 		mcp.WithOutputSchema[fileView](),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithDestructiveHintAnnotation(false),
@@ -174,7 +213,7 @@ func registerTools(s *server.MCPServer) {
 
 	bashTool := mcp.NewTool("bash",
 		mcp.WithTitleAnnotation("Run command"),
-		mcp.WithDescription("Run a bounded shell command inside an open workspace for inspection, tests, builds, Git, or package scripts. Do not modify files through shell redirection when write or edit can be used."),
+		mcp.WithDescription("Run a bounded shell command inside an open workspace. Small output is returned unchanged; large output is redacted, stored as a secure artifact, and represented by exact head/error/tail windows. Use artifact_read for omitted ranges. Do not modify files through shell redirection when write or edit can be used."),
 		mcp.WithString("workspace_id", mcp.Required(), mcp.Description("Workspace identifier returned by open_workspace")),
 		mcp.WithString("command", mcp.Required(), mcp.Description("Shell command to run")),
 		mcp.WithString("cwd", mcp.Description("Optional working directory relative to the workspace root")),
@@ -188,7 +227,31 @@ func registerTools(s *server.MCPServer) {
 	maybeSetWidgetMeta("bash", &bashTool, commandWidgetURI, "Running command", "Command finished")
 	s.AddTool(bashTool, handleBash)
 
-	if activeWidgetMode == widgetModeChanges {
+	artifactTool := mcp.NewTool("artifact_read",
+		mcp.WithTitleAnnotation("Read artifact"),
+		mcp.WithDescription("Read or search a secure Tautline artifact created from large command output. Artifact IDs are opaque, workspace-scoped, redacted before persistence, and cannot be used as filesystem paths."),
+		mcp.WithString("workspace_id", mcp.Required(), mcp.Description("Workspace identifier that created the artifact")),
+		mcp.WithString("artifact_id", mcp.Required(), mcp.Description("Opaque artifact ID returned by bash")),
+		mcp.WithNumber("start_line", mcp.Description("Optional first line to read")),
+		mcp.WithNumber("end_line", mcp.Description("Optional last line to read")),
+		mcp.WithNumber("tail", mcp.Description("Read the last N lines, maximum 2000")),
+		mcp.WithNumber("max_lines", mcp.Description("Window size when end_line is omitted, default 200 and maximum 2000")),
+		mcp.WithString("cursor", mcp.Description("Continuation cursor returned by an earlier artifact_read")),
+		mcp.WithString("query", mcp.Description("Optional literal text or regular expression to search inside the artifact")),
+		mcp.WithBoolean("regex", mcp.Description("Interpret query as a Go regular expression")),
+		mcp.WithBoolean("case_sensitive", mcp.Description("Use case-sensitive matching; default false")),
+		mcp.WithNumber("context_lines", mcp.Description("Surrounding lines per search match, default 2 and maximum 12")),
+		mcp.WithNumber("max_results", mcp.Description("Maximum search matches, default 20 and maximum 100")),
+		mcp.WithOutputSchema[artifactView](),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(true),
+		mcp.WithOpenWorldHintAnnotation(false),
+	)
+	maybeSetWidgetMeta("artifact_read", &artifactTool, toolCardWidgetURI, "Reading artifact", "Artifact ready")
+	s.AddTool(artifactTool, handleArtifactRead)
+
+	if activeWidgetMode != widgetModeOff {
 		showChangesTool := mcp.NewTool("show_changes",
 			mcp.WithTitleAnnotation("Review changes"),
 			mcp.WithDescription("Render one aggregate review after the final write or edit in the current turn. Call exactly once before the final response, not after every file change."),
@@ -202,12 +265,28 @@ func registerTools(s *server.MCPServer) {
 		maybeSetWidgetMeta("show_changes", &showChangesTool, changesWidgetURI, "Preparing review", "Changes ready")
 		s.AddTool(showChangesTool, handleShowChanges)
 	}
+
+	registerSkillTools(s)
+	registerAgentTools(s)
+}
+
+func widgetEnabledForTool(toolName string) bool {
+	if activeWidgetMode == widgetModeFull {
+		return true
+	}
+	if activeWidgetMode != widgetModeChanges {
+		return false
+	}
+	switch toolName {
+	case "open_workspace", "show_changes", "list_subagents", "delegate_task", "get_agent_run", "cancel_agent_run":
+		return true
+	default:
+		return false
+	}
 }
 
 func maybeSetWidgetMeta(toolName string, tool *mcp.Tool, resourceURI, invoking, invoked string) {
-	enabled := activeWidgetMode == widgetModeFull ||
-		(activeWidgetMode == widgetModeChanges && (toolName == "open_workspace" || toolName == "show_changes"))
-	if !enabled {
+	if !widgetEnabledForTool(toolName) {
 		return
 	}
 	setWidgetMeta(tool, resourceURI, invoking, invoked)
@@ -227,13 +306,13 @@ func setWidgetMeta(tool *mcp.Tool, resourceURI, invoking, invoked string) {
 }
 
 func toolHasWidget(toolName string) bool {
-	return activeWidgetMode == widgetModeFull ||
-		(activeWidgetMode == widgetModeChanges && (toolName == "open_workspace" || toolName == "show_changes"))
+	return widgetEnabledForTool(toolName)
 }
 
 func newWidgetToolResult(modelContent, widgetContent any, fallback string) *mcp.CallToolResult {
 	result := mcp.NewToolResultStructured(modelContent, fallback)
 	result.Meta = mcp.NewMetaFromMap(map[string]any{
+		"tautline/widgetData": widgetContent,
 		"devspace/widgetData": widgetContent,
 	})
 	return result
@@ -293,33 +372,13 @@ func handleOpenWorkspace(_ context.Context, req mcp.CallToolRequest) (*mcp.CallT
 }
 
 func handleRead(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	workspaceID := argStr(req, "workspace_id")
-	_, rp, err := resolveWorkspacePath(workspaceID, argStr(req, "path"))
+	view, err := readWorkspaceFileWindow(req)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	limit := clampInt(argInt(req, "max_bytes", defaultReadBytes), 1024, maxReadBytes)
-	content, truncated, info, err := readTextBounded(rp, limit)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	numbered := withLineNumbers(content)
-	lines := countLines(content)
-	relative := filepath.ToSlash(argStr(req, "path"))
-	view := fileView{
-		Kind:        "file",
-		Title:       filepath.Base(rp),
-		Summary:     fmt.Sprintf("%d lines · %d bytes shown", lines, len(content)),
-		WorkspaceID: workspaceID,
-		Path:        relative,
-		Language:    languageFromPath(rp),
-		Content:     numbered,
-		Stats:       toolStats{Bytes: info.Size(), Lines: lines},
-		Truncated:   truncated,
-	}
-	fallback := fmt.Sprintf("Read %s · %d lines.", relative, lines)
-	if truncated {
-		fallback += fmt.Sprintf(" Limited to %d bytes.", limit)
+	fallback := fmt.Sprintf("Read %s lines %d-%d of %d.", view.Path, view.StartLine, view.EndLine, view.TotalLines)
+	if view.Truncated {
+		fallback += " Additional content remains available."
 	}
 	return newToolResult("read", view, view, fallback), nil
 }
@@ -343,7 +402,7 @@ func handleWrite(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResul
 	if statErr != nil && !os.IsNotExist(statErr) {
 		return mcp.NewToolResultError(statErr.Error()), nil
 	}
-	if activeWidgetMode == widgetModeChanges {
+	if activeWidgetMode != widgetModeOff {
 		if err := state.recordOriginal(rp, fileSnapshot{Exists: existed, Content: before}); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -397,7 +456,7 @@ func handleEdit(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	if activeWidgetMode == widgetModeChanges {
+	if activeWidgetMode != widgetModeOff {
 		if err := state.recordOriginal(rp, fileSnapshot{Exists: true, Content: before}); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -436,16 +495,14 @@ func handleBash(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResu
 	defer cancel()
 
 	start := time.Now()
-	output, exitCode, truncated, runErr := runShell(runCtx, cwd, command)
+	capture, exitCode, runErr := runShellCaptured(runCtx, workspaceID, cwd, command)
 	duration := time.Since(start)
 	if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
-		output = strings.TrimSpace(output + fmt.Sprintf("\n\n[timeout] command exceeded %d seconds", timeoutSeconds))
 		exitCode = 124
 	} else if errors.Is(runCtx.Err(), context.Canceled) {
-		output = strings.TrimSpace(output + "\n\n[canceled] request was canceled")
 		exitCode = 130
-	} else if runErr != nil && output == "" {
-		output = runErr.Error()
+	} else if runErr != nil && capture.Output == "" {
+		capture.Output = runErr.Error()
 	}
 
 	state, _ := getWorkspace(workspaceID)
@@ -454,20 +511,30 @@ func handleBash(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResu
 		relativeCWD = "."
 	}
 	view := commandView{
-		Kind:        "command",
-		Title:       "Command finished",
-		Summary:     fmt.Sprintf("Exit %d · %s", exitCode, duration.Round(time.Millisecond)),
-		WorkspaceID: workspaceID,
-		Path:        relativeCWD,
-		Command:     command,
-		Output:      output,
-		Success:     exitCode == 0,
-		Stats:       toolStats{DurationMS: duration.Milliseconds(), ExitCode: intPointer(exitCode), Bytes: int64(len(output))},
-		Truncated:   truncated,
+		Kind:               "command",
+		Title:              "Command finished",
+		Summary:            fmt.Sprintf("Exit %d · %s", exitCode, duration.Round(time.Millisecond)),
+		WorkspaceID:        workspaceID,
+		Path:               relativeCWD,
+		Command:            command,
+		Output:             capture.Output,
+		Success:            exitCode == 0,
+		Stats:              toolStats{DurationMS: duration.Milliseconds(), ExitCode: intPointer(exitCode), Bytes: capture.OriginalBytes, Lines: capture.TotalLines},
+		Truncated:          capture.CaptureTruncated || capture.OmittedLines > 0,
+		Artifact:           capture.Artifact,
+		IncludedRanges:     capture.IncludedRanges,
+		OmittedLines:       capture.OmittedLines,
+		Redacted:           capture.Redacted,
+		StorageUnavailable: capture.StorageUnavailable,
 	}
 	fallback := fmt.Sprintf("Exit %d · %s.", exitCode, duration.Round(time.Millisecond))
-	if truncated {
-		fallback += " Output truncated."
+	if capture.Artifact != nil {
+		fallback += fmt.Sprintf(" Large output stored as %s; %d lines omitted from the inline result.", capture.Artifact.ID, capture.OmittedLines)
+	} else if capture.CaptureTruncated {
+		fallback += " Output reached the configured safety limit."
+	}
+	if capture.Redacted {
+		fallback += " Secret-looking values were redacted."
 	}
 	return newToolResult("bash", view, view, fallback), nil
 }
@@ -645,7 +712,7 @@ func atomicWriteFile(path string, data []byte, mode fs.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	temp, err := os.CreateTemp(filepath.Dir(path), ".devspace-write-*")
+	temp, err := os.CreateTemp(filepath.Dir(path), ".tautline-write-*")
 	if err != nil {
 		return err
 	}

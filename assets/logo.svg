@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Tautline logo</title>
+  <desc id="desc">A precise connected line forming a geometric T between two anchored endpoints.</desc>
+  <defs>
+    <linearGradient id="bg" x1="64" y1="48" x2="448" y2="464" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#111827"/>
+      <stop offset="1" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="line" x1="112" y1="136" x2="400" y2="376" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#67E8F9"/>
+      <stop offset="0.5" stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#818CF8"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="url(#bg)"/>
+  <rect x="25.5" y="25.5" width="461" height="461" rx="110.5" fill="none" stroke="#334155" stroke-width="3"/>
+  <g fill="none" stroke="url(#line)" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)">
+    <path d="M112 152H400" stroke-width="26"/>
+    <path d="M256 152V368" stroke-width="26"/>
+    <path d="M176 296L256 368L336 296" stroke-width="18" opacity="0.92"/>
+  </g>
+  <g fill="#E0F2FE" stroke="#0F172A" stroke-width="10">
+    <circle cx="112" cy="152" r="24"/>
+    <circle cx="400" cy="152" r="24"/>
+    <circle cx="256" cy="368" r="24"/>
+  </g>
+  <circle cx="256" cy="152" r="15" fill="#F8FAFC"/>
+</svg>

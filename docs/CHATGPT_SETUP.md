@@ -1,72 +1,120 @@
-# Connect DevSpace to ChatGPT
+# Connect Tautline to ChatGPT
 
-This guide assumes DevSpace already runs locally on `127.0.0.1:7676` and is reachable through a stable public HTTPS origin.
+This guide uses Tautline v2.1.0 on `127.0.0.1:7688` and a stable public HTTPS origin that forwards requests to the local service.
 
-## 1. Configure DevSpace
+## 1. Create local configuration
 
-Create `.env` with at least:
+Windows PowerShell:
 
-```dotenv
-DEVSPACE_ALLOWED_ROOTS=/path/to/your/projects
-DEVSPACE_OWNER_TOKEN=<long-random-secret>
-DEVSPACE_REQUIRE_AUTH=true
-DEVSPACE_PUBLIC_BASE_URL=https://mcp.example.com
+```powershell
+./scripts/setup.ps1 `
+  -AllowedRoots "D:\Projects" `
+  -PublicBaseUrl "https://mcp.example.com" `
+  -WidgetDomain "https://mcp.example.com" `
+  -AllowedModels "auto"
 ```
 
-On Windows, `scripts/setup.ps1` generates the token and `.env` safely.
+macOS or Linux:
 
-## 2. Expose the server
+```bash
+cp .env.example .env
+```
 
-Use a reverse proxy or tunnel you control. It must forward the public HTTPS origin to:
+Review `.env` and set at least:
+
+```env
+TAUTLINE_ALLOWED_ROOTS=/path/to/your/projects
+TAUTLINE_OWNER_TOKEN=<long-random-secret>
+TAUTLINE_REQUIRE_AUTH=true
+TAUTLINE_PUBLIC_BASE_URL=https://mcp.example.com
+TAUTLINE_WIDGET_DOMAIN=https://mcp.example.com
+TAUTLINE_WIDGETS=changes
+```
+
+Keep allowed roots narrow and never commit `.env`.
+
+## 2. Configure optional sub-agents
+
+Sub-agents require an OpenAI-compatible 9Router endpoint. Configure one default model and an explicit allowlist:
+
+```env
+TAUTLINE_9ROUTER_BASE_URL=http://127.0.0.1:20128/v1
+TAUTLINE_9ROUTER_API_KEY=
+TAUTLINE_9ROUTER_MODEL=auto
+TAUTLINE_9ROUTER_ALLOWED_MODELS=auto
+TAUTLINE_AGENT_ENABLED=true
+TAUTLINE_AGENT_CAPACITY=2
+TAUTLINE_AGENT_TIMEOUT_SECONDS=900
+```
+
+Tautline rejects both requested and returned models outside the allowlist. Set `TAUTLINE_AGENT_ENABLED=false` when delegation is not needed.
+
+## 3. Build and start
+
+Windows PowerShell:
+
+```powershell
+./scripts/build.ps1
+./scripts/start.ps1
+```
+
+macOS or Linux:
+
+```bash
+./scripts/build.sh
+./scripts/start.sh
+```
+
+Verify the local service:
 
 ```text
-http://127.0.0.1:7676
+http://127.0.0.1:7688/healthz
 ```
 
-The MCP URL presented to ChatGPT is:
+The dashboard opens locally and can be used to manage model access, sub-agent capacity, Lightpanda, and tunnel settings.
+
+## 4. Expose the MCP endpoint
+
+Use a quick or named Cloudflare Tunnel from the local dashboard, or configure another trusted reverse proxy. The public MCP endpoint must resolve to:
 
 ```text
 https://mcp.example.com/mcp
 ```
 
-Do not expose an unauthenticated endpoint.
+`TAUTLINE_PUBLIC_BASE_URL` and `TAUTLINE_WIDGET_DOMAIN` must contain the public origin only, without `/mcp`.
 
-## 3. Enable ChatGPT Developer Mode
+The dashboard itself remains local and returns `404` without a valid local admin session.
 
-In ChatGPT settings:
+## 5. Add the MCP connection
 
-1. Enable **Developer mode**.
-2. Enable **Enforce CSP in developer mode**.
-3. Create a developer-mode app using the MCP URL.
-4. Complete the OAuth approval page with your owner token.
-5. Refresh the app after changing tools, schemas, or `ui://` resource URIs.
+Create a custom MCP connection in ChatGPT using the public `/mcp` URL. Complete the OAuth flow with the owner token stored in `.env`.
 
-## 4. Verify the UI
+After changing the public origin, OAuth metadata, tool descriptors, or widget resources, refresh the MCP connection metadata before testing again.
 
-Select DevSpace in the conversation and ask:
+## 6. Verify the workflow
+
+Ask ChatGPT to open a project inside an allowed root:
 
 ```text
-Use DevSpace to open /path/to/allowed/project.
+Use Tautline to open /path/to/allowed/project and explain the repository structure.
 ```
 
-With the recommended `DEVSPACE_WIDGETS=changes` mode, a successful Apps SDK connection renders one compact workspace card. Normal read, write, edit, and command calls remain native tool results. After editing a disposable test file, call `show_changes` once to verify the aggregate review card.
+With `TAUTLINE_WIDGETS=changes`, the expected coding flow is:
 
-## 5. Troubleshooting
+1. `open_workspace` returns one compact workspace card and a reusable `workspace_id`.
+2. Search, read, command, write, and edit calls stay compact.
+3. `show_changes` renders one aggregate review after the final modification.
+4. Repository-specific tests and builds run before completion is reported.
 
-### Tools work, but no widget appears
+## Troubleshooting
 
-- Confirm the app was created in Developer Mode, not only as a generic connector.
-- Refresh the app metadata.
-- Start a new conversation if ChatGPT still uses old descriptors.
-- Verify each tool includes `_meta.ui.resourceUri` and an `outputSchema`.
-- Verify each resource uses `text/html;profile=mcp-app`.
+- Confirm `/healthz` succeeds locally.
+- Confirm the public tunnel forwards to port `7688`.
+- Confirm the public origin exactly matches `TAUTLINE_PUBLIC_BASE_URL` and `TAUTLINE_WIDGET_DOMAIN`.
+- Confirm the requested project is inside `TAUTLINE_ALLOWED_ROOTS`.
+- Confirm `TAUTLINE_REQUIRE_AUTH=true` for a public deployment.
+- Refresh the MCP connection after changing OAuth or widget metadata.
+- Check the dashboard for 9Router, model allowlist, sub-agent, Lightpanda, and tunnel status.
+- For rejected delegation, confirm global delegation is enabled and the requested model appears in the allowlist.
 
-### OAuth fails
-
-- Check `DEVSPACE_PUBLIC_BASE_URL` exactly matches the public HTTPS origin.
-- Confirm the callback host is a ChatGPT/OpenAI host or localhost during local testing.
-- Generate a new owner token if the configured token is unknown.
-
-### Cloudflare stream cancellation messages
-
-DevSpace disables standalone GET streaming and uses stateless Streamable HTTP responses. A cancellation log can still appear when a client intentionally ends a request; confirm `/healthz` remains available before treating it as an outage.
+Tautline uses stateless Streamable HTTP responses and disables standalone GET streaming. A client may intentionally cancel a completed request; verify `/healthz` before treating that log entry as an outage.

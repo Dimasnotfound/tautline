@@ -13,7 +13,7 @@ func widgetDocument(title, renderer string) string {
 		"<style>", widgetCSS, "</style>",
 		"</head>",
 		"<body>",
-		`<main id="app" class="shell"><div class="empty">Waiting for DevSpace result…</div></main>`,
+		`<main id="app" class="shell"><div class="empty">Waiting for Tautline result…</div></main>`,
 		"<script>", widgetBridgeJS, renderer, "</script>",
 		"</body>",
 		"</html>",
@@ -63,7 +63,7 @@ const widgetCSS = `
   }
 }
 * { box-sizing: border-box; }
-html, body { min-height: 100%; }
+html, body { width: 100%; height: auto; min-height: 0; }
 body {
   margin: 0;
   background: transparent;
@@ -170,11 +170,11 @@ document.documentElement.dataset.mode = displayMode;
 
 function esc(value) {
   return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 function formatSize(bytes) {
@@ -225,7 +225,7 @@ function bindActions(copyValue) {
           renderer?.(latestData);
         }
       } catch (error) {
-        console.error("DevSpace fullscreen request failed", error);
+        console.error("Tautline fullscreen request failed", error);
       }
     });
   }
@@ -238,27 +238,66 @@ function bindActions(copyValue) {
         copyButton.textContent = "Copied";
         setTimeout(() => { copyButton.textContent = "Copy"; }, 1200);
       } catch (error) {
-        console.error("DevSpace copy failed", error);
+        console.error("Tautline copy failed", error);
       }
     });
   }
 }
 
+function textFromContent(content) {
+  if (!Array.isArray(content)) return "";
+  return content.map((item) => item?.type === "text" ? String(item.text || "") : "").filter(Boolean).join("\n");
+}
+
 function extractWidgetData(payload) {
-  const envelope = payload?.mcp_tool_result || payload?.call_tool_result || payload;
-  return envelope?._meta?.["devspace/widgetData"] ||
+  if (!payload || typeof payload !== "object") return null;
+  const envelope = payload.mcp_tool_result || payload.call_tool_result || payload;
+  if (envelope?.isError) {
+    const message = textFromContent(envelope.content) || "The tool returned an error without details.";
+    return { kind: "error", title: "Tautline tool error", summary: message, content: message };
+  }
+  const data = envelope?._meta?.["devspace/widgetData"] ||
     envelope?.["devspace/widgetData"] ||
-    payload?.["devspace/widgetData"] ||
+    payload["devspace/widgetData"] ||
     envelope?.structuredContent ||
-    payload?.toolOutput ||
-    payload;
+    payload.toolOutput ||
+    (typeof envelope?.kind === "string" ? envelope : null);
+  if (!data && payload.status) return null;
+  return data && typeof data === "object" ? data : null;
+}
+
+function reportSize() {
+  requestAnimationFrame(() => {
+    const content = app.firstElementChild || app;
+    const rect = content.getBoundingClientRect();
+    const width = Math.max(1, Math.ceil(rect.width || app.getBoundingClientRect().width || 1));
+    const height = Math.max(1, Math.ceil(rect.height || 1));
+    try {
+      window.parent.postMessage({ jsonrpc: "2.0", method: "ui/notifications/size-changed", params: { width, height } }, "*");
+    } catch (_) {}
+  });
+}
+
+function renderSafely() {
+  if (!renderer || !latestData) return;
+  try {
+    if (latestData.kind === "error") {
+      app.innerHTML = '<div class="notice warning"><strong>Tautline tool error</strong><br>' + esc(latestData.content || latestData.summary || "No details available.") + '</div>';
+    } else {
+      renderer(latestData);
+    }
+    reportSize();
+  } catch (error) {
+    app.innerHTML = '<div class="notice warning"><strong>Template render error</strong><br>' + esc(error?.message || error || "Unknown error") + '</div>';
+    reportSize();
+  }
 }
 
 function receive(payload) {
   const data = extractWidgetData(payload);
-  if (!data || typeof data !== "object") return;
+  if (!data) return;
   latestData = data;
-  renderer?.(latestData);
+  renderSafely();
 }
 
 function syncGlobals(globals) {
@@ -269,7 +308,7 @@ function syncGlobals(globals) {
   }
   if (globals.toolResponseMetadata) receive(globals.toolResponseMetadata);
   else if (globals.toolOutput) receive(globals.toolOutput);
-  else renderer?.(latestData);
+  else renderSafely();
 }
 
 function mount(nextRenderer) {
@@ -280,9 +319,9 @@ function mount(nextRenderer) {
   window.addEventListener("message", (event) => {
     if (event.source !== window.parent) return;
     const message = event.data;
-    if (message?.jsonrpc === "2.0" && message?.method === "ui/notifications/tool-result") {
-      receive(message.params);
-    }
+    if (message?.jsonrpc === "2.0" && message?.method === "ui/notifications/tool-result") receive(message.params);
   }, { passive: true });
+  if (typeof ResizeObserver === "function") new ResizeObserver(reportSize).observe(app);
+  reportSize();
 }
 `

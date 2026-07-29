@@ -3,8 +3,14 @@ param(
     [string]$AllowedRoots,
 
     [string]$PublicBaseUrl = "",
+    [string]$WidgetDomain = "",
     [string]$TunnelName = "",
-    [switch]$StartTunnel,
+    [string]$CustomDomain = "",
+    [ValidateSet("off", "quick", "named")]
+    [string]$TunnelMode = "off",
+    [int]$AgentCapacity = 2,
+    [string]$AllowedModels = "auto",
+    [switch]$DisableAgents,
     [switch]$Force
 )
 
@@ -16,24 +22,65 @@ if ((Test-Path $EnvPath) -and -not $Force) {
     throw ".env already exists. Use -Force only when you intend to replace it."
 }
 
+if ($AgentCapacity -lt 1 -or $AgentCapacity -gt 16) {
+    throw "AgentCapacity must be between 1 and 16."
+}
+
+$Models = @($AllowedModels.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+if ($Models.Count -eq 0) {
+    throw "AllowedModels must contain at least one model."
+}
+$NormalizedModels = ($Models | Select-Object -Unique) -join ','
+$DefaultModel = $Models[0]
+
 $Bytes = New-Object byte[] 32
-[System.Security.Cryptography.RandomNumberGenerator]::Fill($Bytes)
-$OwnerToken = [Convert]::ToHexString($Bytes).ToLowerInvariant()
+$Random = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+try {
+    $Random.GetBytes($Bytes)
+}
+finally {
+    $Random.Dispose()
+}
+$OwnerToken = -join ($Bytes | ForEach-Object { $_.ToString("x2") })
+$AgentEnabled = (-not $DisableAgents.IsPresent).ToString().ToLowerInvariant()
+$TunnelAutoStart = ($TunnelMode -ne "off").ToString().ToLowerInvariant()
 
 $Lines = @(
-    "DEVSPACE_ALLOWED_ROOTS=$AllowedRoots",
-    "DEVSPACE_OWNER_TOKEN=$OwnerToken",
-    "DEVSPACE_REQUIRE_AUTH=true",
-    "DEVSPACE_WIDGETS=changes",
-    "DEVSPACE_SHOW_OWNER_TOKEN=false",
-    "DEVSPACE_PUBLIC_BASE_URL=$PublicBaseUrl",
-    "DEVSPACE_START_TUNNEL=$($StartTunnel.IsPresent.ToString().ToLowerInvariant())",
-    "DEVSPACE_TUNNEL_NAME=$TunnelName",
-    "DEVSPACE_TUNNEL_PROTOCOL=http2",
-    "DEVSPACE_RUNTIME_DIR=runtime"
+    "TAUTLINE_ALLOWED_ROOTS=$AllowedRoots",
+    "TAUTLINE_OWNER_TOKEN=$OwnerToken",
+    "TAUTLINE_REQUIRE_AUTH=true",
+    "TAUTLINE_PORT=7688",
+    "TAUTLINE_RUNTIME_DIR=runtime/v2",
+    "TAUTLINE_OPEN_DASHBOARD=true",
+    "TAUTLINE_WIDGETS=changes",
+    "TAUTLINE_PUBLIC_BASE_URL=$PublicBaseUrl",
+    "TAUTLINE_WIDGET_DOMAIN=$WidgetDomain",
+    "TAUTLINE_9ROUTER_BASE_URL=http://127.0.0.1:20128/v1",
+    "TAUTLINE_9ROUTER_API_KEY=",
+    "TAUTLINE_9ROUTER_MODEL=$DefaultModel",
+    "TAUTLINE_9ROUTER_ALLOWED_MODELS=$NormalizedModels",
+    "TAUTLINE_AGENT_ENABLED=$AgentEnabled",
+    "TAUTLINE_AGENT_CAPACITY=$AgentCapacity",
+    "TAUTLINE_AGENT_TIMEOUT_SECONDS=900",
+    "TAUTLINE_AGENT_IMAGE_SUPPORT=false",
+    "TAUTLINE_AGENT_RTK=false",
+    "TAUTLINE_AGENT_CAVEMAN=false",
+    "TAUTLINE_LIGHTPANDA_PATH=auto",
+    "TAUTLINE_LIGHTPANDA_DOCKER_IMAGE=lightpanda/browser:nightly",
+    "TAUTLINE_LIGHTPANDA_PORT=9223",
+    "TAUTLINE_LIGHTPANDA_AUTOSTART=false",
+    "TAUTLINE_LIGHTPANDA_OBEY_ROBOTS=true",
+    "TAUTLINE_CLOUDFLARED_PATH=bin/cloudflared.exe",
+    "TAUTLINE_TUNNEL_MODE=$TunnelMode",
+    "TAUTLINE_TUNNEL_NAME=$TunnelName",
+    "TAUTLINE_CUSTOM_DOMAIN=$CustomDomain",
+    "TAUTLINE_TUNNEL_PROTOCOL=http2",
+    "TAUTLINE_TUNNEL_AUTOSTART=$TunnelAutoStart"
 )
 
-Set-Content -Path $EnvPath -Value $Lines -Encoding UTF8
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllLines($EnvPath, $Lines, $Utf8NoBom)
+
 Write-Host "Created $EnvPath" -ForegroundColor Green
-Write-Host "Owner token: $OwnerToken" -ForegroundColor Yellow
-Write-Host "Store this token securely. The .env file is ignored by Git." -ForegroundColor DarkGray
+Write-Host "Owner token generated and stored in .env (not printed)." -ForegroundColor Yellow
+Write-Host "The .env file is ignored by Git. Keep it private." -ForegroundColor DarkGray

@@ -1,7 +1,7 @@
 package main
 
 func commandWidgetHTML() string {
-	return widgetDocument("DevSpace command result", commandRendererJS)
+	return widgetDocument("Tautline command result", commandRendererJS)
 }
 
 const commandRendererJS = `

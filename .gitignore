@@ -7,9 +7,10 @@
 *.p12
 *.pfx
 
-# DevSpace runtime state
+# Tautline runtime state
 runtime/*
 !runtime/.gitkeep
+.tautline/
 .devspace/
 .owner_token.txt
 *.pid
@@ -31,6 +32,8 @@ vendor/
 coverage/
 .tmp/
 tmp/
+__pycache__/
+*.pyc
 
 # IDE and OS
 .vscode/

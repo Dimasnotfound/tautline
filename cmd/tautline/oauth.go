@@ -31,14 +31,14 @@ var (
 )
 
 func loadConfig() {
-	ownerToken = strings.TrimSpace(os.Getenv("DEVSPACE_OWNER_TOKEN"))
+	ownerToken = firstEnvironment("TAUTLINE_OWNER_TOKEN", "DEVSPACE_OWNER_TOKEN")
 	ownerTokenGenerated = ownerToken == ""
 	if ownerTokenGenerated {
 		ownerToken = randToken()
-		fmt.Println("warning: DEVSPACE_OWNER_TOKEN was not set; a temporary token was generated for this process")
+		fmt.Println("warning: TAUTLINE_OWNER_TOKEN was not set; a temporary token was generated for this process")
 	}
 
-	roots := strings.TrimSpace(os.Getenv("DEVSPACE_ALLOWED_ROOTS"))
+	roots := firstEnvironment("TAUTLINE_ALLOWED_ROOTS", "DEVSPACE_ALLOWED_ROOTS")
 	if roots == "" {
 		roots = "."
 	}
@@ -55,7 +55,7 @@ func loadConfig() {
 		allowedRoots = append(allowedRoots, canonical)
 	}
 	if len(allowedRoots) == 0 {
-		panic("DEVSPACE_ALLOWED_ROOTS contains no valid roots")
+		panic("TAUTLINE_ALLOWED_ROOTS contains no valid roots")
 	}
 }
 
@@ -155,7 +155,7 @@ func (o *oauthServer) authorizationServerMetadata(w http.ResponseWriter, r *http
 		"code_challenge_methods_supported":      []string{"S256"},
 		"token_endpoint_auth_methods_supported": []string{"none"},
 		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
-		"scopes_supported":                      []string{"devspace"},
+		"scopes_supported":                      []string{"tautline"},
 	})
 }
 
@@ -164,7 +164,7 @@ func (o *oauthServer) protectedResourceMetadata(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, map[string]any{
 		"resource":                 base + "/mcp",
 		"authorization_servers":    []string{base},
-		"scopes_supported":         []string{"devspace"},
+		"scopes_supported":         []string{"tautline"},
 		"bearer_methods_supported": []string{"header"},
 	})
 }
@@ -181,7 +181,7 @@ func (o *oauthServer) register(w http.ResponseWriter, r *http.Request) {
 		"grant_types":                []string{"authorization_code", "refresh_token"},
 		"response_types":             []string{"code"},
 		"token_endpoint_auth_method": "none",
-		"scope":                      "devspace",
+		"scope":                      "tautline",
 	})
 }
 
@@ -190,11 +190,11 @@ var approvalTemplate = template.Must(template.New("approval").Parse(`<!doctype h
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Approve DevSpace</title>
+<title>Approve Tautline</title>
 <style>
 :root{color-scheme:light dark;font-family:system-ui,sans-serif}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f4f4f5;color:#18181b}.card{width:min(420px,calc(100% - 32px));padding:24px;border:1px solid #d4d4d8;border-radius:14px;background:#fff;box-shadow:0 12px 32px #00000012}h1{font-size:20px;margin:0 0 8px}p{color:#71717a;line-height:1.5}label{display:block;font-weight:600;margin:18px 0 6px}input{width:100%;padding:11px 12px;border:1px solid #a1a1aa;border-radius:9px;font:inherit;box-sizing:border-box}button{width:100%;margin-top:14px;padding:11px;border:0;border-radius:9px;background:#18181b;color:#fff;font:inherit;font-weight:700;cursor:pointer}@media(prefers-color-scheme:dark){body{background:#111;color:#fafafa}.card{background:#1c1c1c;border-color:#3f3f46}p{color:#a1a1aa}button{background:#fafafa;color:#18181b}}</style>
 </head>
-<body><main class="card"><h1>Connect ChatGPT to DevSpace</h1><p>This grants access only to the configured local project roots and DevSpace tools.</p>
+<body><main class="card"><h1>Connect ChatGPT to Tautline</h1><p>This grants access only to the configured local project roots and Tautline tools.</p>
 <form method="post" action="/authorize">
 <input type="hidden" name="client_id" value="{{.ClientID}}">
 <input type="hidden" name="redirect_uri" value="{{.RedirectURI}}">
@@ -346,7 +346,8 @@ func writeTokenResponse(w http.ResponseWriter, scope string) {
 
 func (o *oauthServer) requireBearer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.EqualFold(strings.TrimSpace(os.Getenv("DEVSPACE_REQUIRE_AUTH")), "false") || os.Getenv("DEVSPACE_REQUIRE_AUTH") == "0" {
+		requireAuth := firstEnvironment("TAUTLINE_REQUIRE_AUTH", "DEVSPACE_REQUIRE_AUTH")
+		if strings.EqualFold(requireAuth, "false") || requireAuth == "0" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -358,8 +359,8 @@ func (o *oauthServer) requireBearer(next http.Handler) http.Handler {
 			}
 		}
 		metadataURL := baseURL(r) + "/.well-known/oauth-protected-resource/mcp"
-		w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+metadataURL+`", scope="devspace"`)
-		writeOAuthError(w, http.StatusUnauthorized, "invalid_token", "a valid DevSpace bearer token is required")
+		w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+metadataURL+`", scope="tautline"`)
+		writeOAuthError(w, http.StatusUnauthorized, "invalid_token", "a valid Tautline bearer token is required")
 	})
 }
 
@@ -393,7 +394,7 @@ func validateSignedToken(token, expectedType string) (signedTokenClaims, bool) {
 	if err := json.Unmarshal(payload, &claims); err != nil {
 		return signedTokenClaims{}, false
 	}
-	if claims.Type != expectedType || claims.Exp <= time.Now().Unix() || claims.Scope != "devspace" {
+	if claims.Type != expectedType || claims.Exp <= time.Now().Unix() || claims.Scope != "tautline" {
 		return signedTokenClaims{}, false
 	}
 	return claims, true
@@ -427,11 +428,22 @@ func allowedRedirectURI(raw string) bool {
 }
 
 func defaultScope(_ string) string {
-	return "devspace"
+	return "tautline"
 }
 
 func baseURL(r *http.Request) string {
-	if public := strings.TrimSpace(os.Getenv("DEVSPACE_PUBLIC_BASE_URL")); public != "" {
+	if public := firstEnvironment("TAUTLINE_PUBLIC_BASE_URL"); public != "" {
+		return strings.TrimRight(public, "/")
+	}
+	if runtime, err := currentApplicationRuntime(); err == nil {
+		if public := strings.TrimSpace(runtime.tunnel.status().PublicURL); public != "" {
+			return strings.TrimRight(public, "/")
+		}
+		if public := strings.TrimSpace(runtime.config.snapshot().PublicBaseURL); public != "" {
+			return strings.TrimRight(public, "/")
+		}
+	}
+	if public := firstEnvironment("DEVSPACE_PUBLIC_BASE_URL"); public != "" {
 		return strings.TrimRight(public, "/")
 	}
 	scheme := "http"

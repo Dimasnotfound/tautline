@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#08090a">
+  <title>Tautline</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/icon.svg">
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#overview" aria-label="Tautline home">
+        <img class="brand-icon" src="/assets/icon.svg" alt="">
+        <span><strong>Tautline</strong><small id="version">Control plane</small></span>
+      </a>
+      <nav aria-label="Dashboard sections">
+        <a href="#overview" class="nav-link active">Overview</a>
+        <a href="#connection" class="nav-link">Connection</a>
+        <a href="#agents" class="nav-link">Sub-agents</a>
+        <a href="#browser" class="nav-link">Browser</a>
+        <a href="#activity" class="nav-link">Activity</a>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="health-line"><span class="status-dot" id="service-dot"></span><span id="service-health">Starting</span></div>
+        <small id="uptime">Uptime 0s</small>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div><h1>Control center</h1><p>Connections, agents, and runtime.</p></div>
+        <button class="button ghost" id="refresh-all" type="button">Refresh</button>
+      </header>
+
+      <div id="notice" class="notice hidden" role="status"></div>
+
+      <section id="overview" class="section">
+        <div class="section-heading"><h2>Overview</h2></div>
+        <div class="metric-grid">
+          <article class="metric-card"><span>9Router</span><strong id="metric-router">Checking</strong><small id="metric-router-detail">127.0.0.1:20128</small></article>
+          <article class="metric-card"><span>Sub-agents</span><strong id="metric-agents">0 available</strong><small id="metric-agents-detail">0 busy</small></article>
+          <article class="metric-card"><span>Lightpanda</span><strong id="metric-browser">Not installed</strong><small id="metric-browser-detail">Port 9223</small></article>
+          <article class="metric-card"><span>Cloudflare</span><strong id="metric-tunnel">Off</strong><small id="metric-tunnel-detail">No public endpoint</small></article>
+        </div>
+      </section>
+
+      <section id="connection" class="section">
+        <div class="section-heading"><h2>Connection</h2></div>
+        <div class="two-column">
+          <article class="panel">
+            <div class="panel-heading"><h3>MCP endpoints</h3></div>
+            <div class="field-stack">
+              <label>Local endpoint</label>
+              <div class="copy-row"><code id="local-mcp">Loading…</code><button class="icon-button copy" data-copy-target="local-mcp" type="button">Copy</button></div>
+              <label>Public endpoint</label>
+              <div class="copy-row"><code id="public-mcp">Not configured</code><button class="icon-button copy" data-copy-target="public-mcp" type="button">Copy</button></div>
+              <label>Owner token</label>
+              <div class="copy-row"><code id="owner-token">Loading…</code><button class="icon-button" id="reveal-token" type="button">Reveal</button><button class="icon-button copy" data-copy-target="owner-token" type="button">Copy</button></div>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading"><h3>9Router</h3><span class="badge" id="router-badge">Checking</span></div>
+            <form id="router-form" class="form-grid">
+              <label class="field span-2"><span>Base URL</span><input id="router-url" name="router_base_url" autocomplete="off"></label>
+              <label class="field"><span>Default model</span><select id="router-model" name="router_default_model"></select></label>
+              <label class="field"><span>API key</span><input id="router-key" name="router_api_key" type="password" placeholder="Keep current"></label>
+              <div class="field span-2">
+                <div class="field-label-row"><span>Allowed models</span><small>Only selected models can run.</small></div>
+                <div id="model-list" class="model-list" role="group" aria-label="Allowed 9Router models"></div>
+              </div>
+              <div class="form-actions span-2"><button class="button primary" type="submit">Save</button><button class="button ghost" id="probe-router" type="button">Check models</button></div>
+            </form>
+          </article>
+        </div>
+
+        <article class="panel tunnel-panel">
+          <div class="panel-heading"><h3>Cloudflare tunnel</h3><span class="badge" id="tunnel-badge">Off</span></div>
+          <form id="tunnel-form" class="form-grid three">
+            <label class="field"><span>Mode</span><select id="tunnel-mode"><option value="off">Off</option><option value="quick">Quick</option><option value="named">Named</option></select></label>
+            <label class="field"><span>Tunnel name</span><input id="tunnel-name" placeholder="tautline"></label>
+            <label class="field"><span>Custom domain</span><input id="tunnel-domain" placeholder="mcp.example.com"></label>
+            <label class="field"><span>Protocol</span><select id="tunnel-protocol"><option value="http2">HTTP/2</option><option value="quic">QUIC</option></select></label>
+            <div class="form-actions span-2"><button class="button primary" type="submit">Save</button><button class="button ghost" id="start-tunnel" type="button">Start</button><button class="button ghost" id="stop-tunnel" type="button">Stop</button><button class="button ghost" id="generate-dns" type="button">DNS route</button></div>
+          </form>
+          <div id="dns-result" class="dns-result hidden"></div>
+        </article>
+      </section>
+
+      <section id="agents" class="section">
+        <div class="section-heading">
+          <div><h2>Sub-agents</h2><p>Manage capacity and permissions.</p></div>
+          <div class="section-actions">
+            <label class="master-switch"><input id="agents-enabled" type="checkbox"><span class="toggle"></span><span id="agents-enabled-label">Enabled</span></label>
+            <button class="button primary" id="add-agent" type="button">Add slot</button>
+          </div>
+        </div>
+        <div id="agent-slots" class="agent-grid"></div>
+      </section>
+
+      <section id="browser" class="section">
+        <div class="section-heading"><h2>Lightpanda</h2><span class="badge" id="browser-badge">Checking</span></div>
+        <article class="panel">
+          <form id="browser-form" class="form-grid three">
+            <label class="field span-2"><span>Executable</span><input id="browser-path" placeholder="auto"></label>
+            <label class="field"><span>CDP port</span><input id="browser-port" type="number" min="1" max="65535"></label>
+            <label class="toggle-row"><input id="browser-robots" type="checkbox"><span class="toggle"></span><span>Respect robots.txt</span></label>
+            <div class="form-actions span-2"><button class="button primary" type="submit">Save</button><button class="button ghost" id="start-browser" type="button">Start</button><button class="button ghost" id="stop-browser" type="button">Stop</button></div>
+          </form>
+          <div class="detail-strip"><span>CDP</span><code id="browser-endpoint">http://127.0.0.1:9223</code><span id="browser-error" class="danger-text"></span></div>
+        </article>
+      </section>
+
+      <section id="activity" class="section">
+        <div class="section-heading"><h2>Activity</h2></div>
+        <div id="run-list" class="run-list"><div class="empty">No delegated runs.</div></div>
+      </section>
+    </main>
+  </div>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>

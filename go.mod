@@ -1,4 +1,4 @@
-module github.com/dimasnotfound/devspace-mcp
+module github.com/dimasnotfound/tautline
 
 go 1.24
 

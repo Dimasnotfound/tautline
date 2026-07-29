@@ -1,6 +1,49 @@
 # Changelog
 
-All notable changes to DevSpace MCP are documented here.
+All notable changes to Tautline are documented here.
+
+## [2.1.0] - 2026-07-29
+
+### Added
+
+- Global dashboard switch for enabling or pausing new sub-agent delegation.
+- Strict multi-model allowlist through `TAUTLINE_9ROUTER_ALLOWED_MODELS`.
+- Dashboard model cards and a default-model selector limited to allowed models.
+- Local SVG application icon for the dashboard and browser tab.
+- Regression tests for allowlist normalization, global delegation control, forbidden requested models, forbidden returned models, and embedded dashboard assets.
+
+### Changed
+
+- Sub-agent tools now expose the global enabled state, default model, and complete model allowlist.
+- Delegation rejects a requested model outside the allowlist.
+- A completed 9Router response is rejected when the actual returned model is outside the allowlist.
+- Dashboard copy and controls are shorter, cleaner, and more responsive.
+- Default sub-agent capacity is two slots and the default timeout is 900 seconds.
+- Application source moved from the repository root into `cmd/tautline`, with embedded dashboard and Hermes bridge assets grouped beside the executable package.
+
+### Security
+
+- New delegation can be disabled globally without exposing router credentials in dashboard state.
+- Both caller-selected and router-returned models are checked against the configured allowlist.
+
+## [2.0.0] - 2026-07-28
+
+### Added
+
+- Tautline v2 identity and a local dashboard on port `7688`.
+- Generic asynchronous sub-agent capacity through an OpenAI-compatible 9Router endpoint.
+- Explicit image capability gates and in-memory image request handling.
+- Lightpanda-only browsing with executable, PATH, Docker, and WSL resolution.
+- Secure large-output artifacts with bounded previews and follow-up reads.
+- Read-only Hermes skill discovery and loading.
+- Cloudflare quick tunnel, named tunnel, and DNS route controls.
+- Atomic configuration at `runtime/v2/config/tautline.json`.
+
+### Changed
+
+- The main widget moved to `ui://tautline/tool-card-v2.html` with legacy aliases for migration.
+- The main binary is built from the repository root.
+- New configuration uses `TAUTLINE_*` environment variables.
 
 ## [1.4.0] - 2026-07-18
 

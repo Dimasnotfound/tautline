@@ -1,7 +1,7 @@
 package main
 
 func changesWidgetHTML() string {
-	return widgetDocument("DevSpace changes", changesRendererJS)
+	return widgetDocument("Tautline changes", changesRendererJS)
 }
 
 const changesRendererJS = `

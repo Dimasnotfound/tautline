@@ -1,7 +1,7 @@
 package main
 
 func diffWidgetHTML() string {
-	return widgetDocument("DevSpace diff viewer", diffRendererJS)
+	return widgetDocument("Tautline diff viewer", diffRendererJS)
 }
 
 const diffRendererJS = `

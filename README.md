@@ -1,260 +1,280 @@
 <p align="center">
-  <img src="assets/hero.svg" alt="DevSpace MCP — ChatGPT MCP on your local machine" width="100%" />
+  <img src="assets/logo.svg" alt="Tautline logo" width="104" />
+</p>
+
+<h1 align="center">Tautline</h1>
+
+<p align="center">
+  <strong>A context-safe, local-first MCP control plane for ChatGPT.</strong><br />
+  Workspace tools, compact MCP Apps widgets, controlled sub-agents, Lightpanda browsing, and Cloudflare Tunnel in one Go runtime.
 </p>
 
 <p align="center">
-  <strong>Bring ChatGPT to your local codebase without pasting the whole project into the chat.</strong>
+  <a href="https://github.com/Dimasnotfound/devspace-mcp/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/Dimasnotfound/devspace-mcp/actions/workflows/ci.yml/badge.svg" /></a>
+  <img alt="Tautline version 2.1.0" src="https://img.shields.io/badge/version-2.1.0-38bdf8" />
+  <img alt="Go 1.24 or newer" src="https://img.shields.io/badge/Go-1.24%2B-00ADD8" />
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-818cf8" /></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/dimasnotfound/devspace-mcp/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/dimasnotfound/devspace-mcp/actions/workflows/ci.yml/badge.svg" /></a>
-  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-22c55e.svg" /></a>
-  <img alt="Go 1.24+" src="https://img.shields.io/badge/Go-1.24%2B-00ADD8.svg" />
-  <img alt="MCP Apps" src="https://img.shields.io/badge/MCP-Apps-8b5cf6.svg" />
-  <img alt="OAuth PKCE" src="https://img.shields.io/badge/OAuth-PKCE_S256-2563eb.svg" />
+  <img src="assets/hero.svg" alt="Tautline 2.1 local MCP control plane" width="100%" />
 </p>
 
-# DevSpace MCP
+> The repository keeps its historical `devspace-mcp` URL for compatibility, while the application and current release line use the **Tautline** name.
 
-**DevSpace is a local-first MCP server that lets ChatGPT inspect selected workspaces, read and modify files, run bounded commands, and render native-looking interactive cards inside the conversation.**
+## Overview
 
-Your source code stays on your machine. DevSpace exposes only the directories listed in `DEVSPACE_ALLOWED_ROOTS`, protects the remote MCP endpoint with OAuth 2.0 + PKCE, and keeps large widget-only data outside the model-visible context whenever possible.
+Tautline lets ChatGPT work with explicitly allowed local project folders without placing an entire repository into the conversation. It provides bounded file and command tools, secure large-output artifacts, local dashboard controls, MCP Apps widgets, optional 9Router sub-agents, Lightpanda page rendering, and Cloudflare Tunnel integration.
 
-> **ChatGPT MCP on your local machine — fast enough for daily development, narrow enough to understand, and secure enough to configure deliberately.**
+The server is local-first: repositories are not bulk-uploaded, while runtime state, credentials, and command execution remain on the machine running Tautline. Content selected for a ChatGPT request or delegated sub-agent may be transmitted to the configured model provider. Public access to `/mcp` is protected by OAuth unless authentication is deliberately disabled for an isolated local test.
 
-## Why DevSpace?
+## What is new in v2.1.0
 
-| Problem | DevSpace approach |
+- **Global sub-agent control** — pause or resume all new delegation from the dashboard.
+- **Per-slot controls** — enable capacity, image tasks, RTK compaction, and Caveman output independently.
+- **Strict model allowlist** — configure multiple permitted 9Router models and select one default model.
+- **Runtime enforcement** — both the requested model and the model actually returned by 9Router must be allowed.
+- **Cleaner dashboard** — shorter labels, clearer controls, model cards, responsive layout, and a local application icon.
+- **Regression coverage** — tests cover global delegation, requested and returned model rejection, allowlist normalization, and embedded dashboard assets.
+
+## Main capabilities
+
+| Area | Capability |
 |---|---|
-| Repeatedly pasting files into ChatGPT | Read only the file or repository view requested by the model |
-| Huge repository trees consuming context | Send a compact model preview while hydrating the full widget through hidden MCP metadata |
-| Generic text-only MCP output | Render dedicated workspace, file, diff, and command cards |
-| Public MCP endpoint risk | Require OAuth bearer tokens with Authorization Code + PKCE S256 |
-| Accidental access outside the project | Canonicalize paths, resolve symlinks, and enforce explicit allowed roots |
-| Commands that never stop | Apply timeouts, cancellation, bounded output, and process-tree termination |
-
-## Up to 93.7% fewer workspace-preview tokens
-
-<p align="center">
-  <img src="assets/benchmark.svg" alt="Workspace preview benchmark showing 93.7 percent fewer tokens" width="100%" />
-</p>
-
-For a synthetic repository containing 350 entries, the included benchmark measured:
-
-| Payload | JSON bytes | `o200k_base` tokens |
-|---|---:|---:|
-| Full workspace tree in model context | 30,424 | 9,157 |
-| DevSpace compact model preview | 1,946 | 576 |
-| **Reduction** | **93.6%** | **93.7%** |
-
-DevSpace sends the compact preview through `structuredContent`, which is visible to the model, while the complete tree can be delivered to the widget through tool-result `_meta`, which MCP Apps keeps hidden from the model.
-
-Run the benchmark yourself:
-
-```bash
-python scripts/payload_benchmark.py
-```
-
-`pip install tiktoken` is optional and only needed to reproduce the token count. Without it, the script still reports byte reduction.
-
-> The 93.7% figure applies to this repository-preview benchmark, not every tool call and not an entire ChatGPT bill. Actual token usage depends on repository shape, selected tools, model tokenizer, conversation history, and ChatGPT behavior.
-
-## Codex-style coding workflow
-
-The default `DEVSPACE_WIDGETS=changes` mode follows a quieter agent loop:
-
-1. `open_workspace` is called once and returns a reusable `workspace_id`.
-2. `read`, `write`, `edit`, and `bash` use relative paths inside that workspace.
-3. Individual operations stay as compact native tool results instead of spawning a custom widget each time.
-4. After the final file edit, `show_changes` renders one aggregate review card.
-5. The assistant runs verification and gives a short final summary.
-
-Only two custom cards are active by default: a small workspace card and one final change-review card. Set `DEVSPACE_WIDGETS=full` to restore file, per-edit diff, and command widgets, or `off` to disable custom UI completely.
-
-See [docs/CODING_WORKFLOW.md](docs/CODING_WORKFLOW.md) for the complete tool loop and checkpoint behavior.
-
-Every widget is plain HTML, CSS, and JavaScript embedded in the Go binary. There is no React runtime, CDN, remote font, external script, WebSocket, or frontend build step.
+| Workspace | Open only configured roots, search files, read bounded windows, write atomically, edit exact text, and run bounded commands. |
+| Context safety | Keep model-visible responses compact and move oversized command output into secure local artifacts. |
+| MCP Apps | Render compact workspace and change-review cards, or enable the full per-tool widget experience. |
+| Dashboard | Manage runtime settings, model access, sub-agent capacity, Lightpanda, and Cloudflare Tunnel locally. |
+| Sub-agents | Delegate asynchronous tasks through an OpenAI-compatible 9Router endpoint with explicit capability gates. |
+| Browser | Fetch and render pages with Lightpanda only; no Chrome fallback is used. |
+| Skills | Discover installed Hermes skills through a read-only bridge before non-trivial work. |
+| Security | OAuth + PKCE, canonical path enforcement, local admin sessions, CSRF protection, bounded output, and narrow allowed roots. |
 
 ## Architecture
 
 <p align="center">
-  <img src="assets/architecture.svg" alt="DevSpace MCP architecture" width="100%" />
+  <img src="assets/architecture.svg" alt="Tautline local-first MCP architecture" width="100%" />
 </p>
 
-The important separation is:
+Tautline separates three kinds of data:
 
-- **Model-visible:** concise `structuredContent` used for reasoning and follow-up tool calls.
-- **Widget-only:** richer UI hydration data in tool-result `_meta`.
-- **Local-only:** files, commands, secrets, and runtime state remain on the machine running DevSpace.
-
-## Security model
-
-DevSpace is powerful software. It can modify files and execute commands inside configured roots, so install it only on a machine you control.
-
-Security protections include:
-
-- OAuth 2.0 Authorization Code flow with PKCE S256.
-- Signed one-hour access tokens and 30-day refresh tokens.
-- Authentication enabled by default.
-- Canonical path and symlink validation before every filesystem operation.
-- Explicit comma-separated allowed roots.
-- Atomic UTF-8 writes and unique-match edits.
-- Read limits, command-output limits, timeouts, and cancellation.
-- MCP widget CSP with no external connection or resource domains.
-- `.gitignore` coverage for `.env`, tokens, runtime files, logs, certificates, and binaries.
-
-Read [SECURITY.md](SECURITY.md) before exposing DevSpace through a tunnel.
+- **Model-visible data** — concise structured results needed for reasoning and follow-up calls.
+- **Widget-only data** — richer presentation data delivered through MCP tool-result metadata.
+- **Local-only data** — source files, secrets, command processes, runtime configuration, and stored artifacts.
 
 ## Requirements
 
 - Go 1.24 or newer.
 - Git.
-- ChatGPT Developer Mode for MCP App UI.
-- A public HTTPS endpoint that forwards to `127.0.0.1:7676` when connecting from ChatGPT.
-- Optional: Cloudflare Tunnel and Git Bash on Windows.
+- Python 3 for the Hermes skill bridge syntax check.
+- Node.js for dashboard JavaScript validation during builds.
+- A ChatGPT client that supports remote MCP servers and MCP Apps.
+- A stable HTTPS origin when connecting ChatGPT to a machine outside the client.
+- Optional: 9Router, Lightpanda, Docker or WSL2, and `cloudflared`.
 
-## Quick start — Windows
+## Quick start
+
+### Windows PowerShell
 
 ```powershell
-git clone https://github.com/dimasnotfound/devspace-mcp.git
+git clone https://github.com/Dimasnotfound/devspace-mcp.git
 cd devspace-mcp
 
-# Generate a private .env and owner token.
-.\scripts\setup.ps1 `
-  -AllowedRoots "D:\Projects" `
-  -PublicBaseUrl "https://mcp.example.com"
-
-# Build and test.
-.\scripts\build.ps1
-
-# Start locally without an automatic tunnel.
-.\scripts\start.ps1
+./scripts/setup.ps1 -AllowedRoots "D:\Projects"
+./scripts/build.ps1
+./scripts/start.ps1
 ```
 
-To let the start script launch a configured Cloudflare named tunnel:
+`setup.ps1` creates a private `.env` file and generates a random owner token. The token is not printed to the terminal.
 
-```powershell
-.\scripts\setup.ps1 `
-  -AllowedRoots "D:\Projects" `
-  -PublicBaseUrl "https://mcp.example.com" `
-  -TunnelName "devspace" `
-  -StartTunnel `
-  -Force
-
-.\scripts\start.ps1 -Tunnel
-```
-
-## Quick start — macOS/Linux
+### macOS or Linux
 
 ```bash
-git clone https://github.com/dimasnotfound/devspace-mcp.git
+git clone https://github.com/Dimasnotfound/devspace-mcp.git
 cd devspace-mcp
+
 cp .env.example .env
+# Edit .env and set a narrow TAUTLINE_ALLOWED_ROOTS value and a random owner token.
 
-# Edit .env and replace every example value.
 ./scripts/build.sh
-./bin/devspace -start -tunnel=false
+./scripts/start.sh
 ```
 
-The MCP endpoint is available at:
+The local dashboard opens by default at `http://127.0.0.1:7688`.
 
-```text
-http://127.0.0.1:7676/mcp
+## Default endpoints
+
+| Component | Default |
+|---|---|
+| Dashboard | `http://127.0.0.1:7688` |
+| MCP | `http://127.0.0.1:7688/mcp` |
+| Health | `http://127.0.0.1:7688/healthz` |
+| 9Router | `http://127.0.0.1:20128/v1` |
+| Lightpanda CDP | `http://127.0.0.1:9223` |
+| Runtime directory | `runtime/v2/` |
+| Main widget | `ui://tautline/tool-card-v2.html` |
+
+## Core MCP tools
+
+| Category | Tools |
+|---|---|
+| Workspace | `open_workspace`, `search`, `read`, `write`, `edit`, `bash`, `show_changes` |
+| Large output | `artifact_read` |
+| Skills | `skills_search`, `skill_view`, `skill_read_file` |
+| Sub-agents | `list_subagents`, `delegate_task`, `get_agent_run`, `cancel_agent_run` |
+| Browser | `lightpanda_fetch` |
+
+After `open_workspace`, all filesystem operations use paths relative to the returned `workspace_id`. Canonical paths and symlink targets are checked against `TAUTLINE_ALLOWED_ROOTS`.
+
+## Widget modes
+
+Set `TAUTLINE_WIDGETS` in `.env`:
+
+| Value | Behavior |
+|---|---|
+| `changes` | Compact workspace card plus one aggregate review after edits. This is the default. |
+| `full` | Workspace, file, diff, command, and change-review widgets. |
+| `off` | Text results only. |
+
+## 9Router and sub-agents
+
+Tautline sends delegated requests only to an OpenAI-compatible 9Router endpoint. Provider accounts, aliases, fallback rules, and routing remain the responsibility of 9Router.
+
+The dashboard stores one default model and a list of allowed models. A delegation is accepted only when:
+
+1. global sub-agent delegation is enabled;
+2. an enabled slot is available;
+3. the requested model is in `TAUTLINE_9ROUTER_ALLOWED_MODELS`;
+4. the model returned by 9Router is also in the allowlist;
+5. image requests pass every explicit image capability gate.
+
+Disabling sub-agents blocks new delegation. It does not forcibly terminate a run that was already active; use `cancel_agent_run` for that run.
+
+Relevant variables:
+
+```env
+TAUTLINE_9ROUTER_BASE_URL=http://127.0.0.1:20128/v1
+TAUTLINE_9ROUTER_API_KEY=
+TAUTLINE_9ROUTER_MODEL=auto
+TAUTLINE_9ROUTER_ALLOWED_MODELS=auto
+TAUTLINE_AGENT_ENABLED=true
+TAUTLINE_AGENT_CAPACITY=2
+TAUTLINE_AGENT_TIMEOUT_SECONDS=900
 ```
 
-The health endpoint is:
+## Lightpanda
 
-```text
-http://127.0.0.1:7676/healthz
-```
+Tautline does not use Chrome or Chromium as a fallback. In `auto` mode it resolves Lightpanda in this order:
 
-## Connect from ChatGPT
+1. the configured executable;
+2. `lightpanda` on `PATH`;
+3. Docker using `lightpanda/browser:nightly`;
+4. a supported WSL2 installation on Windows.
 
-1. Expose the local server through a stable public HTTPS origin.
-2. Set that origin in `DEVSPACE_PUBLIC_BASE_URL`.
-3. In ChatGPT, enable **Developer mode** and **Enforce CSP in developer mode**.
-4. Create a developer-mode app using `https://your-domain.example/mcp`.
-5. Complete OAuth using your owner token.
-6. Refresh the app metadata after changing tool descriptors or widget URIs.
-7. Select DevSpace in the conversation and ask it to open a path inside an allowed root.
+Image buffers and delegated image payloads are kept in memory for the request and are not intentionally written into run state, configuration, logs, or runtime files.
 
-Example prompt:
+## Cloudflare Tunnel
 
-```text
-Use DevSpace to open D:\Projects\my-app and explain the repository structure.
-```
+The local dashboard supports quick tunnels, named tunnels, and custom-domain DNS routing through `cloudflared`. Named tunnel and DNS operations require an existing local Cloudflare login and an accessible zone.
+
+Set `TAUTLINE_PUBLIC_BASE_URL` and `TAUTLINE_WIDGET_DOMAIN` to the exact public HTTPS origin used by ChatGPT. Do not include `/mcp` in the origin value.
 
 ## Configuration
 
-Copy `.env.example` to `.env` or run `scripts/setup.ps1`.
+Copy [`.env.example`](.env.example) and review every value. The most important settings are:
 
-| Variable | Default | Description |
-|---|---|---|
-| `DEVSPACE_ALLOWED_ROOTS` | `.` | Comma-separated directories available to tools |
-| `DEVSPACE_OWNER_TOKEN` | Temporary random token | Secret used for approval and token signing |
-| `DEVSPACE_REQUIRE_AUTH` | `true` | Bearer validation; never disable on a public endpoint |
-| `DEVSPACE_WIDGETS` | `changes` | `changes`, `full`, or `off` custom UI mode |
-| `DEVSPACE_SHOW_OWNER_TOKEN` | `false` | Display a configured token in startup output |
-| `DEVSPACE_PUBLIC_BASE_URL` | Derived from request | Stable public HTTPS origin for OAuth metadata |
-| `DEVSPACE_START_TUNNEL` | `false` | Start a named Cloudflare tunnel automatically |
-| `DEVSPACE_TUNNEL_NAME` | empty | Cloudflare named tunnel |
-| `DEVSPACE_TUNNEL_PROTOCOL` | automatic | Optional `http2` or `quic` selection |
-| `DEVSPACE_CLOUDFLARED_PATH` | PATH or `bin/` | Optional cloudflared executable location |
-| `DEVSPACE_SHELL` | platform default | Optional shell executable override |
-| `DEVSPACE_RUNTIME_DIR` | `runtime` | PID-file directory |
+| Variable | Purpose |
+|---|---|
+| `TAUTLINE_ALLOWED_ROOTS` | Comma-separated folders Tautline may access. Keep this narrow. |
+| `TAUTLINE_OWNER_TOKEN` | Secret used during OAuth owner authorization. |
+| `TAUTLINE_REQUIRE_AUTH` | Keep `true` for any public deployment. |
+| `TAUTLINE_PUBLIC_BASE_URL` | Public HTTPS origin used by OAuth metadata. |
+| `TAUTLINE_WIDGET_DOMAIN` | Stable HTTPS origin declared for MCP Apps widgets. |
+| `TAUTLINE_WIDGETS` | `changes`, `full`, or `off`. |
+| `TAUTLINE_AGENT_ENABLED` | Global switch for new sub-agent delegation. |
+| `TAUTLINE_9ROUTER_ALLOWED_MODELS` | Comma-separated model allowlist. |
+| `TAUTLINE_LIGHTPANDA_PATH` | `auto`, `docker`, `wsl`, or an executable path. |
+| `TAUTLINE_TUNNEL_MODE` | `off`, `quick`, or `named`. |
 
-## Tool safety limits
+Dashboard changes are saved atomically to `runtime/v2/config/tautline.json`. Environment variables override stored configuration at startup.
 
-| Limit | Value |
-|---|---:|
-| Workspace entries | 350 |
-| Workspace depth | 5 |
-| Model-visible workspace entries | 20 |
-| Default file read | 64 KiB |
-| Maximum file read | 256 KiB |
-| Command output | 128 KiB |
-| Default command timeout | 120 seconds |
-| Maximum command timeout | 300 seconds |
+## Security
 
-## Project structure
+Tautline can modify files and execute commands inside configured roots. Treat it as privileged development software.
 
-```text
-.
-├── cmd/devspace/             # Go MCP server, OAuth, tools, and embedded widgets
-├── assets/                   # README visuals
-├── docs/                     # Architecture and operational documentation
-├── scripts/                  # Setup, build, start, and benchmark helpers
-├── .github/workflows/ci.yml  # Linux/Windows CI and secret scanning
-├── .env.example              # Safe configuration template
-├── SECURITY.md
-├── CONTRIBUTING.md
-└── LICENSE
-```
+- Keep `TAUTLINE_ALLOWED_ROOTS` limited to project directories.
+- Never expose `/mcp` with `TAUTLINE_REQUIRE_AUTH=false`.
+- Never commit `.env`, owner tokens, tunnel credentials, logs, runtime state, or binaries.
+- Keep the dashboard local; it binds to `127.0.0.1` and requires a bootstrap-derived admin session.
+- Review tool approvals and delegated output before applying changes.
+- Read [SECURITY.md](SECURITY.md) before using a public tunnel.
+
+## Connect to ChatGPT
+
+See [docs/CHATGPT_SETUP.md](docs/CHATGPT_SETUP.md) for the complete OAuth, tunnel, and MCP connection flow.
+
+The standard context-safe coding loop is documented in [docs/CODING_WORKFLOW.md](docs/CODING_WORKFLOW.md).
 
 ## Development
 
+Run the same checks used by CI:
+
 ```bash
-go fmt ./...
-go test ./...
-go vet ./...
-go build ./cmd/devspace
+./scripts/build.sh
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for widget and security requirements.
+Or run them individually:
 
-## Roadmap
+```bash
+test -z "$(gofmt -l .)"
+TAUTLINE_WIDGET_DOMAIN= TAUTLINE_PUBLIC_BASE_URL= go test ./...
+go vet ./...
+go build ./cmd/tautline
+node --check cmd/tautline/web/app.js
+python -m py_compile cmd/tautline/bridge/hermes_skill_bridge.py
+```
 
-- Optional Codex-style `apply_patch` and long-running process sessions.
-- Cursor-based directory expansion for very large monorepos.
-- Optional Git status and branch summaries.
-- More granular command policies.
-- Signed release binaries and checksums.
-- Additional operating-system packaging.
+The main executable is built from `cmd/tautline`. The optional Windows-to-WSL Lightpanda shim is built from `cmd/lightpanda-shim`.
+
+## Repository layout
+
+```text
+.
+├── .github/workflows/           # CI and secret scanning
+├── assets/                      # Public README artwork
+├── cmd/
+│   ├── tautline/                # Main Tautline executable package
+│   │   ├── bridge/              # Embedded Hermes read-only bridge
+│   │   ├── web/                 # Embedded dashboard assets and icon
+│   │   ├── *_test.go            # Package-level regression tests
+│   │   └── *.go                 # Runtime, tools, UI, agents, OAuth, and tunnel code
+│   └── lightpanda-shim/         # Optional Windows-to-WSL Lightpanda shim
+├── docs/                        # ChatGPT setup and coding workflow guides
+├── runtime/                     # Ignored local runtime state; only .gitkeep is tracked
+├── scripts/                     # Setup, build, and start helpers
+├── .env.example                 # Safe configuration template
+├── go.mod                       # Go module definition
+└── README.md                    # Project overview and usage
+```
+
+See [`cmd/tautline/README.md`](cmd/tautline/README.md) for a concise map of the executable package files.
+
+## Migration from DevSpace
+
+1. Replace `DEVSPACE_*` variables with their `TAUTLINE_*` equivalents.
+2. Build and run `tautline` instead of `devspace`.
+3. Change the local origin from port `7676` to `7688`, or set `TAUTLINE_PORT` explicitly.
+4. Update the public MCP origin and refresh the connection metadata in ChatGPT.
+5. Keep the previous runtime directory until Tautline v2.1.0 is confirmed healthy.
+
+Selected legacy aliases remain for migration compatibility, but new configuration and documentation use `TAUTLINE_*` names.
+
+## Contributing
+
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md), run the complete quality gate, and do not include machine-specific configuration or secrets.
 
 ## License
 
-MIT © 2026 Dimas Juli Pratama.
+Tautline is released under the [MIT License](LICENSE).
 
-## Disclaimer
-
-DevSpace is an independent open-source project and is not affiliated with or endorsed by OpenAI. ChatGPT and OpenAI are trademarks of their respective owners. Cloudflare Tunnel is optional and governed by Cloudflare's own terms and documentation.
+Tautline is an independent open-source project and is not affiliated with or endorsed by OpenAI, Cloudflare, Lightpanda, or any model provider. Their names and trademarks belong to their respective owners.

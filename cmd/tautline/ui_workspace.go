@@ -1,7 +1,7 @@
 package main
 
 func workspaceWidgetHTML() string {
-	return widgetDocument("DevSpace workspace", workspaceRendererJS)
+	return widgetDocument("Tautline workspace", workspaceRendererJS)
 }
 
 const workspaceRendererJS = `
