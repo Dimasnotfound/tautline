@@ -2,6 +2,52 @@
 
 All notable changes to Tautline are documented here.
 
+## [2.5.1] - 2026-08-03
+
+### Added
+
+- Dedicated no-argument `tautline_activity` render tool for first-use widget activation.
+- Active workspace ID persistence so a newly mounted widget restores the latest project automatically.
+- Empty-state bootstrap support when no workspace has been registered yet.
+
+### Changed
+
+- Moved widget output metadata from `open_workspace` to `tautline_activity`; every operational tool remains data-only.
+- Made `activity_snapshot.workspace_id` optional for app polling and active-workspace recovery.
+- Updated the monitor to follow the active workspace without remounting its iframe.
+- Advanced the widget resource to `ui://tautline/activity-v3.html` to avoid stale client caches.
+
+### Fixed
+
+- The monitor no longer depends on `open_workspace` being called after each Tautline restart or ChatGPT reconnection.
+
+### Notes
+
+- Starting the local executable cannot render ChatGPT UI by itself. The first user-triggered MyLocal interaction calls `tautline_activity` and mounts the widget.
+
+## [2.5.0] - 2026-08-03
+
+### Added
+
+- `workspace_lookup` for reusing an already-open project without mounting another widget card.
+- A small local workspace registry at `runtime/v2/state/workspaces.json` so existing widget sessions can recover their workspace after restart.
+- Semantic event themes for read, write, edit, create, delete, changes, command, skill, agent, and failure activity.
+- Bounded detail caching for previously inspected activity entries.
+
+### Changed
+
+- Replaced full widget rerenders with a static shell, incremental timeline updates, and event delegation.
+- Added independent scrolling for the timeline and preview inspector while preserving their positions during polling.
+- Removed the Changes summary block, Latest and Refresh controls, and the separate metadata-chip row.
+- Added adaptive polling that slows from 1.4 seconds to at most 5 seconds while activity is unchanged.
+- Advanced the single widget resource to `ui://tautline/activity-v2.html` to avoid stale v2.4 client caches.
+- Repeated `open_workspace` calls for an already-open folder are rejected before another monitor can mount.
+
+### Security
+
+- Kept `open_workspace` as the only tool with widget output metadata; `workspace_lookup`, `activity_snapshot`, and every other tool remain data-only.
+- Retained bounded, redacted, in-memory activity payloads with no new external assets or network origins.
+
 ## [2.4.0] - 2026-08-02
 
 ### Added

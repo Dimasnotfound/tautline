@@ -43,4 +43,4 @@ Open a private GitHub security advisory instead of a public issue. Include the a
 
 ## Supported versions
 
-Security fixes are applied to the latest release line. The currently documented public release is Tautline v2.4.0.
+Security fixes are applied to the latest release line. The currently documented public release is Tautline v2.5.1.

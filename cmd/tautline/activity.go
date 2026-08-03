@@ -77,9 +77,18 @@ func newActivityStore() *activityStore {
 	return &activityStore{events: make([]activityEvent, 0, activityLimit)}
 }
 
+func isInternalActivityTool(toolName string) bool {
+	switch strings.TrimSpace(toolName) {
+	case "tautline_activity", "activity_snapshot", "workspace_lookup":
+		return true
+	default:
+		return false
+	}
+}
+
 func recordActivity(toolName string, payload any, fallback string) bool {
 	runtime, err := currentApplicationRuntime()
-	if err != nil || runtime.activity == nil || toolName == "activity_snapshot" {
+	if err != nil || runtime.activity == nil || isInternalActivityTool(toolName) {
 		return false
 	}
 	runtime.activity.record(toolName, payload, fallback, false)
@@ -105,7 +114,7 @@ func activityMiddleware(store *activityStore) server.ToolHandlerMiddleware {
 	return func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 		return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			result, err := next(ctx, request)
-			if store == nil || request.Params.Name == "activity_snapshot" || consumeActivityMarker(result) {
+			if store == nil || isInternalActivityTool(request.Params.Name) || consumeActivityMarker(result) {
 				return result, err
 			}
 			payload, fallback := activityCallPayload(request, result, err)

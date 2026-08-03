@@ -106,8 +106,16 @@ func TestLanguageFromPath(t *testing.T) {
 
 func TestActivityWidgetIsSingleAndLightweight(t *testing.T) {
 	html := activityWidgetHTML()
-	if len(html) > 24*1024 {
+	if len(html) > 32*1024 {
 		t.Fatalf("activity widget is too large: %d bytes", len(html))
+	}
+	if strings.Contains(html, "app.innerHTML =") {
+		t.Fatal("activity widget must not rebuild the complete application shell")
+	}
+	for _, marker := range []string{"pollDelay = 1400", "Math.min(5000", "detailCache.size > 24", "timelineList.innerHTML"} {
+		if !strings.Contains(html, marker) {
+			t.Fatalf("lightweight incremental renderer is missing %q", marker)
+		}
 	}
 	lower := strings.ToLower(html)
 	if strings.Contains(lower, "<script src=") || strings.Contains(lower, "<link rel=\"stylesheet\"") || strings.Contains(lower, "https://") {
@@ -168,6 +176,58 @@ func TestActivityWidgetUsesRenderedContentHeight(t *testing.T) {
 		if !strings.Contains(html, required) {
 			t.Fatalf("content-sized widget is missing %q", required)
 		}
+	}
+}
+
+func TestActivityWidgetV25LayoutAndInteractionContract(t *testing.T) {
+	html := activityWidgetHTML()
+
+	for _, forbidden := range []string{
+		"No review selected",
+		"id=\"latest\"",
+		"id=\"refresh\"",
+		"class=\"controls\"",
+		"class=\"facts\"",
+		"args.workspace_id = workspaceID",
+	} {
+		if strings.Contains(html, forbidden) {
+			t.Fatalf("v2.5 widget still contains removed chrome %q", forbidden)
+		}
+	}
+
+	for _, required := range []string{
+		"class=\"detail-scroll\"",
+		"overflow-y: auto",
+		"min-height: 0",
+		"data-role=\"timeline\"",
+		"data-role=\"inspector\"",
+		"function eventTheme",
+		"function classifyCodeLine",
+		"detailCache",
+		"lastDetailSignature",
+		"if (next.workspaceId) workspaceID = String(next.workspaceId)",
+		"setTimeout(() => { if (!snapshot) refresh(true); }, 0)",
+		"Waiting for an active workspace",
+		"addEventListener(\"click\", handleTimelineClick)",
+	} {
+		if !strings.Contains(html, required) {
+			t.Fatalf("v2.5 widget contract is missing %q", required)
+		}
+	}
+
+	for _, semanticKind := range []string{"read", "write", "edit", "create", "delete", "changes", "command", "skill", "agent"} {
+		if !strings.Contains(html, "kind-"+semanticKind) {
+			t.Fatalf("semantic event theme %q is missing", semanticKind)
+		}
+	}
+}
+
+func TestV251VersionAndWidgetRevision(t *testing.T) {
+	if appVersion != "2.5.1" {
+		t.Fatalf("appVersion=%q, want 2.5.1", appVersion)
+	}
+	if activityWidgetURI != "ui://tautline/activity-v3.html" {
+		t.Fatalf("activityWidgetURI=%q, want the v3 widget resource", activityWidgetURI)
 	}
 }
 
@@ -315,7 +375,7 @@ func TestSkillCacheKeyTracksSnapshot(t *testing.T) {
 
 func TestWorkflowInstructionsRequireSkillMatching(t *testing.T) {
 	instructions := codingWorkflowInstructions()
-	for _, expected := range []string{"skills_search", "skill_view", "Before every non-trivial task", "never expose secret configuration values"} {
+	for _, expected := range []string{"tautline_activity", "automatically mounts the single activity widget", "skills_search", "skill_view", "Before every non-trivial task", "never expose secret configuration values", "workspace_lookup", "prevent duplicate widget cards"} {
 		if !strings.Contains(instructions, expected) {
 			t.Fatalf("workflow instructions are missing %q", expected)
 		}
@@ -429,7 +489,7 @@ func TestParseWidgetMode(t *testing.T) {
 	}
 }
 
-func TestOnlyOpenWorkspaceOwnsWidgetMetadata(t *testing.T) {
+func TestOnlyTautlineActivityOwnsWidgetMetadata(t *testing.T) {
 	previousMode := activeWidgetMode
 	activeWidgetMode = widgetModeOn
 	t.Cleanup(func() { activeWidgetMode = previousMode })
@@ -448,18 +508,26 @@ func TestOnlyOpenWorkspaceOwnsWidgetMetadata(t *testing.T) {
 		}
 	}
 	sort.Strings(widgetTools)
-	if len(widgetTools) != 1 || widgetTools[0] != "open_workspace" {
-		t.Fatalf("widget tools=%v, want only open_workspace", widgetTools)
+	if len(widgetTools) != 1 || widgetTools[0] != "tautline_activity" {
+		t.Fatalf("widget tools=%v, want only tautline_activity", widgetTools)
+	}
+	launcher, exists := tools["tautline_activity"]
+	if !exists {
+		t.Fatal("tautline_activity tool is missing")
+	}
+	encodedLauncher, _ := json.Marshal(launcher.Tool)
+	for _, marker := range []string{activityWidgetURI, "openai/widgetAccessible", "resourceUri", "automatically"} {
+		if !strings.Contains(string(encodedLauncher), marker) {
+			t.Fatalf("tautline_activity metadata is missing %q: %s", marker, encodedLauncher)
+		}
 	}
 	openTool, exists := tools["open_workspace"]
 	if !exists {
 		t.Fatal("open_workspace tool is missing")
 	}
 	encodedOpen, _ := json.Marshal(openTool.Tool)
-	for _, marker := range []string{activityWidgetURI, "openai/widgetAccessible", "resourceUri"} {
-		if !strings.Contains(string(encodedOpen), marker) {
-			t.Fatalf("open_workspace metadata is missing %q: %s", marker, encodedOpen)
-		}
+	if strings.Contains(string(encodedOpen), "outputTemplate") || strings.Contains(string(encodedOpen), "resourceUri") {
+		t.Fatalf("open_workspace must be data-only: %s", encodedOpen)
 	}
 	activityTool, exists := tools["activity_snapshot"]
 	if !exists {
@@ -469,6 +537,9 @@ func TestOnlyOpenWorkspaceOwnsWidgetMetadata(t *testing.T) {
 	if !strings.Contains(string(encodedActivity), "private") || !strings.Contains(string(encodedActivity), "app") || strings.Contains(string(encodedActivity), "outputTemplate") {
 		t.Fatalf("activity_snapshot is not app-only: %s", encodedActivity)
 	}
+	if strings.Contains(string(encodedActivity), `"required":["workspace_id"]`) {
+		t.Fatalf("activity_snapshot still requires workspace_id: %s", encodedActivity)
+	}
 
 	result := newToolResult("delegate_task", map[string]string{"kind": "agent_run"}, map[string]string{"kind": "agent_run"}, "delegated")
 	encodedResult, err := json.Marshal(result)
@@ -477,6 +548,67 @@ func TestOnlyOpenWorkspaceOwnsWidgetMetadata(t *testing.T) {
 	}
 	if strings.Contains(string(encodedResult), "widgetData") {
 		t.Fatalf("data-only tool result contains widget metadata: %s", encodedResult)
+	}
+}
+
+func TestOpenWorkspaceRejectsDuplicateWidgetMount(t *testing.T) {
+	root, err := canonicalPath(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousRoots := allowedRoots
+	allowedRoots = []string{root}
+	t.Cleanup(func() { allowedRoots = previousRoots })
+
+	request := toolRequest("open_workspace", map[string]any{"path": root})
+	first, err := handleOpenWorkspace(context.Background(), request)
+	if err != nil || first == nil || first.IsError {
+		t.Fatalf("first open_workspace failed: result=%+v err=%v", first, err)
+	}
+	second, err := handleOpenWorkspace(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second == nil || !second.IsError {
+		t.Fatalf("duplicate open_workspace was not rejected: %+v", second)
+	}
+	text := activityResultText(second)
+	if !strings.Contains(text, "already open") || !strings.Contains(text, "workspace_lookup") {
+		t.Fatalf("duplicate rejection is not actionable: %q", text)
+	}
+}
+
+func TestWorkspaceLookupReusesOpenWorkspaceWithoutOwningWidget(t *testing.T) {
+	root, err := canonicalPath(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	registered := registerWorkspace(root)
+	found, ok := lookupWorkspaceByRoot(root)
+	if !ok || found != registered {
+		t.Fatalf("workspace lookup did not return the existing state: found=%+v ok=%v", found, ok)
+	}
+	if _, ok := lookupWorkspaceByRoot(filepath.Join(root, "missing")); ok {
+		t.Fatal("workspace lookup returned an unopened path")
+	}
+
+	previousMode := activeWidgetMode
+	activeWidgetMode = widgetModeOn
+	t.Cleanup(func() { activeWidgetMode = previousMode })
+	mcpServer := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(true))
+	registerTools(mcpServer)
+	entry, exists := mcpServer.ListTools()["workspace_lookup"]
+	if !exists {
+		t.Fatal("workspace_lookup tool is missing")
+	}
+	encoded, err := json.Marshal(entry.Tool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"openai/outputTemplate", "resourceUri", activityWidgetURI} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Fatalf("workspace_lookup unexpectedly owns widget metadata %q: %s", forbidden, encoded)
+		}
 	}
 }
 

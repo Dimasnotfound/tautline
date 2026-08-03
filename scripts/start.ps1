@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 $EnvPath = Join-Path $Root ".env"
 $Binary = Join-Path $Root "bin/tautline.exe"
-$ExpectedVersion = "2.4.0"
+$ExpectedVersion = "2.5.1"
 
 function Import-DotEnv {
     param([string]$Path)

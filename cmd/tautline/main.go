@@ -124,6 +124,10 @@ func doStart(store *configStore, port, requestedTunnelMode string, openDashboard
 	}
 	loadConfig()
 	loadWorkflowConfig()
+	if err := configureWorkspacePersistence(cfg.RuntimeDir); err != nil {
+		fmt.Fprintln(os.Stderr, "workspace registry initialization failed:", err)
+		return
+	}
 	oauth := newOAuth()
 
 	app, err := newApplicationRuntime(store)

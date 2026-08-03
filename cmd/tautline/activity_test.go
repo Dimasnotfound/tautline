@@ -56,16 +56,18 @@ func TestActivityMiddlewareRemovesInternalMarker(t *testing.T) {
 	}
 }
 
-func TestActivityMiddlewareSkipsSnapshotPolling(t *testing.T) {
+func TestActivityMiddlewareSkipsInternalMonitorTools(t *testing.T) {
 	store := newActivityStore()
 	handler := activityMiddleware(store)(func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		return mcp.NewToolResultText("snapshot"), nil
+		return mcp.NewToolResultText("internal"), nil
 	})
-	if _, err := handler(context.Background(), toolRequest("activity_snapshot", map[string]any{})); err != nil {
-		t.Fatal(err)
+	for _, toolName := range []string{"tautline_activity", "activity_snapshot", "workspace_lookup"} {
+		if _, err := handler(context.Background(), toolRequest(toolName, map[string]any{})); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if len(store.events) != 0 {
-		t.Fatalf("snapshot polling created recursive activity: %+v", store.events)
+		t.Fatalf("internal monitor tools created recursive or noisy activity: %+v", store.events)
 	}
 }
 

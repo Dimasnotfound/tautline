@@ -75,6 +75,24 @@ type workspaceModelView struct {
 	Truncated   bool       `json:"truncated,omitempty"`
 }
 
+type workspaceLookupView struct {
+	Kind        string `json:"kind"`
+	Title       string `json:"title"`
+	Summary     string `json:"summary,omitempty"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	Path        string `json:"path"`
+	Found       bool   `json:"found"`
+}
+
+type activityBootstrapView struct {
+	Kind        string `json:"kind"`
+	Title       string `json:"title"`
+	Summary     string `json:"summary"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	Path        string `json:"path,omitempty"`
+	Ready       bool   `json:"ready"`
+}
+
 type fileView struct {
 	Kind           string    `json:"kind"`
 	Title          string    `json:"title"`
@@ -125,9 +143,23 @@ type commandView struct {
 }
 
 func registerTools(s *server.MCPServer) {
+	activityLauncher := mcp.NewTool("tautline_activity",
+		mcp.WithTitleAnnotation("Show Tautline activity"),
+		mcp.WithDescription("Automatically mount the single Tautline activity widget at the beginning of a MyLocal interaction. Call this exactly once before other Tautline tools when the current conversation does not already contain the widget. It restores the active workspace automatically and performs no file changes."),
+		mcp.WithOutputSchema[activityBootstrapView](),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(true),
+		mcp.WithOpenWorldHintAnnotation(false),
+	)
+	if activeWidgetMode != widgetModeOff {
+		setWidgetMeta(&activityLauncher, activityWidgetURI, "Opening Tautline activity", "Tautline activity ready")
+	}
+	s.AddTool(activityLauncher, handleTautlineActivity)
+
 	openWorkspaceTool := mcp.NewTool("open_workspace",
 		mcp.WithTitleAnnotation("Open workspace"),
-		mcp.WithDescription("Open one project folder and return a reusable workspace_id. Call this once per project, then use relative paths with every other Tautline workspace tool."),
+		mcp.WithDescription("Open one project folder and return a reusable workspace_id. This tool is data-only and never mounts a widget. Call it only when workspace_lookup reports that the folder is not already open."),
 		mcp.WithString("path", mcp.Required(), mcp.Description("Absolute project directory inside an allowed root")),
 		mcp.WithOutputSchema[workspaceModelView](),
 		mcp.WithReadOnlyHintAnnotation(true),
@@ -135,15 +167,24 @@ func registerTools(s *server.MCPServer) {
 		mcp.WithIdempotentHintAnnotation(true),
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
-	if activeWidgetMode != widgetModeOff {
-		setWidgetMeta(&openWorkspaceTool, activityWidgetURI, "Opening workspace", "Workspace ready")
-	}
 	s.AddTool(openWorkspaceTool, handleOpenWorkspace)
+
+	workspaceLookupTool := mcp.NewTool("workspace_lookup",
+		mcp.WithTitleAnnotation("Reuse workspace"),
+		mcp.WithDescription("Find a project folder that is already open and return its existing workspace_id without mounting another widget. Use this before open_workspace when the chat may already contain the Tautline monitor."),
+		mcp.WithString("path", mcp.Required(), mcp.Description("Absolute project directory inside an allowed root")),
+		mcp.WithOutputSchema[workspaceLookupView](),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(true),
+		mcp.WithOpenWorldHintAnnotation(false),
+	)
+	s.AddTool(workspaceLookupTool, handleWorkspaceLookup)
 
 	activityTool := mcp.NewTool("activity_snapshot",
 		mcp.WithTitleAnnotation("Read Tautline activity"),
-		mcp.WithDescription("Read the current activity timeline for one open workspace. This app-only tool feeds the single Tautline activity widget."),
-		mcp.WithString("workspace_id", mcp.Required(), mcp.Description("Workspace identifier returned by open_workspace")),
+		mcp.WithDescription("Read the current activity timeline for the active workspace. The app may omit workspace_id to restore the most recently active persisted workspace automatically."),
+		mcp.WithString("workspace_id", mcp.Description("Optional workspace identifier; omitted means the active persisted workspace")),
 		mcp.WithString("event_id", mcp.Description("Optional event to inspect in detail")),
 		mcp.WithOutputSchema[activitySnapshot](),
 		mcp.WithReadOnlyHintAnnotation(true),
@@ -309,14 +350,34 @@ func newToolResult(toolName string, modelContent, activityContent any, fallback 
 	return result
 }
 
+func handleTautlineActivity(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	view := activityBootstrapView{
+		Kind:    "activity_bootstrap",
+		Title:   "Tautline activity",
+		Summary: "Activity monitor ready. Open a workspace to begin tracking local work.",
+		Ready:   false,
+	}
+	if state, found := defaultWorkspace(); found {
+		view.Summary = "Activity monitor restored for " + filepath.Base(state.Root) + "."
+		view.WorkspaceID = state.ID
+		view.Path = state.Root
+		view.Ready = true
+	}
+	return mcp.NewToolResultStructured(view, view.Summary), nil
+}
+
 func handleActivitySnapshot(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	runtime, err := currentApplicationRuntime()
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	workspaceID := argStr(req, "workspace_id")
-	if _, err := getWorkspace(workspaceID); err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+	workspaceID := strings.TrimSpace(argStr(req, "workspace_id"))
+	if workspaceID != "" {
+		if _, found := activateWorkspace(workspaceID); !found {
+			return mcp.NewToolResultError(fmt.Sprintf("unknown workspace_id %q; call open_workspace first", workspaceID)), nil
+		}
+	} else if state, found := defaultWorkspace(); found {
+		workspaceID = state.ID
 	}
 	snapshot := runtime.activity.snapshot(workspaceID, argStr(req, "event_id"))
 	return mcp.NewToolResultStructured(snapshot, snapshot.Summary), nil
@@ -333,6 +394,9 @@ func handleOpenWorkspace(_ context.Context, req mcp.CallToolRequest) (*mcp.CallT
 	}
 	if !info.IsDir() {
 		return mcp.NewToolResultError("not a directory: " + rp), nil
+	}
+	if existing, found := lookupWorkspaceByRoot(rp); found {
+		return mcp.NewToolResultError(fmt.Sprintf("workspace already open as %s; use workspace_lookup or reuse this workspace_id instead of calling open_workspace again", existing.ID)), nil
 	}
 
 	state := registerWorkspace(rp)
@@ -366,6 +430,28 @@ func handleOpenWorkspace(_ context.Context, req mcp.CallToolRequest) (*mcp.CallT
 	}
 	fallback := fmt.Sprintf("Workspace %s opened as %s · %d files · %d folders.", filepath.Base(rp), state.ID, stats.Files, stats.Directories)
 	return newToolResult("open_workspace", modelView, widgetView, fallback), nil
+}
+
+func handleWorkspaceLookup(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	rp, err := resolvePath(argStr(req, "path"))
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	state, found := lookupWorkspaceByRoot(rp)
+	view := workspaceLookupView{
+		Kind:    "workspace_lookup",
+		Title:   "Workspace not open",
+		Summary: "Call open_workspace once to register this project. The existing Tautline activity widget will detect it automatically.",
+		Path:    rp,
+		Found:   found,
+	}
+	if found {
+		_, _ = activateWorkspace(state.ID)
+		view.Title = "Workspace ready"
+		view.Summary = "Reuse the existing workspace_id; the activity widget now follows this workspace."
+		view.WorkspaceID = state.ID
+	}
+	return mcp.NewToolResultStructured(view, view.Summary), nil
 }
 
 func handleRead(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
