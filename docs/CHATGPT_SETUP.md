@@ -1,120 +1,97 @@
-# Connect Tautline to ChatGPT
+# Connect Tautline v2.4.0 to ChatGPT
 
-This guide uses Tautline v2.1.0 on `127.0.0.1:7688` and a stable public HTTPS origin that forwards requests to the local service.
+Tautline listens on `127.0.0.1:7688` by default. ChatGPT requires a stable HTTPS origin that forwards to the local MCP endpoint.
 
-## 1. Create local configuration
+## 1. Prepare private configuration
 
-Windows PowerShell:
+Create `.env` with the setup script:
 
 ```powershell
-./scripts/setup.ps1 `
-  -AllowedRoots "D:\Projects" `
-  -PublicBaseUrl "https://mcp.example.com" `
-  -WidgetDomain "https://mcp.example.com" `
-  -AllowedModels "auto"
+./scripts/setup.ps1 -AllowedRoots "D:\Projects"
 ```
 
-macOS or Linux:
-
-```bash
-cp .env.example .env
-```
-
-Review `.env` and set at least:
+Keep these settings enabled for any public connection:
 
 ```env
-TAUTLINE_ALLOWED_ROOTS=/path/to/your/projects
-TAUTLINE_OWNER_TOKEN=<long-random-secret>
 TAUTLINE_REQUIRE_AUTH=true
-TAUTLINE_PUBLIC_BASE_URL=https://mcp.example.com
-TAUTLINE_WIDGET_DOMAIN=https://mcp.example.com
-TAUTLINE_WIDGETS=changes
+TAUTLINE_WIDGETS=on
 ```
 
-Keep allowed roots narrow and never commit `.env`.
-
-## 2. Configure optional sub-agents
-
-Sub-agents require an OpenAI-compatible 9Router endpoint. Configure one default model and an explicit allowlist:
+Set the exact public origin without `/mcp`:
 
 ```env
-TAUTLINE_9ROUTER_BASE_URL=http://127.0.0.1:20128/v1
-TAUTLINE_9ROUTER_API_KEY=
-TAUTLINE_9ROUTER_MODEL=auto
-TAUTLINE_9ROUTER_ALLOWED_MODELS=auto
-TAUTLINE_AGENT_ENABLED=true
-TAUTLINE_AGENT_CAPACITY=2
-TAUTLINE_AGENT_TIMEOUT_SECONDS=900
+TAUTLINE_PUBLIC_BASE_URL=https://your-domain.example
+TAUTLINE_WIDGET_DOMAIN=https://your-domain.example
 ```
 
-Tautline rejects both requested and returned models outside the allowlist. Set `TAUTLINE_AGENT_ENABLED=false` when delegation is not needed.
-
-## 3. Build and start
-
-Windows PowerShell:
+## 2. Build and start
 
 ```powershell
 ./scripts/build.ps1
 ./scripts/start.ps1
 ```
 
-macOS or Linux:
-
-```bash
-./scripts/build.sh
-./scripts/start.sh
-```
-
-Verify the local service:
+Verify locally:
 
 ```text
-http://127.0.0.1:7688/healthz
+Dashboard: http://127.0.0.1:7688/
+Health:    http://127.0.0.1:7688/healthz
+MCP:       http://127.0.0.1:7688/mcp
 ```
 
-The dashboard opens locally and can be used to manage model access, sub-agent capacity, Lightpanda, and tunnel settings.
+## 3. Configure the HTTPS tunnel
 
-## 4. Expose the MCP endpoint
+For an existing named Cloudflare Tunnel, configure:
 
-Use a quick or named Cloudflare Tunnel from the local dashboard, or configure another trusted reverse proxy. The public MCP endpoint must resolve to:
+```env
+TAUTLINE_CLOUDFLARED_PATH=bin/cloudflared.exe
+TAUTLINE_TUNNEL_MODE=named
+TAUTLINE_TUNNEL_NAME=your-tunnel-name
+TAUTLINE_TUNNEL_PROTOCOL=http2
+TAUTLINE_TUNNEL_AUTOSTART=true
+```
+
+The public hostname must forward to `http://127.0.0.1:7688`.
+
+## 4. Add the MCP server in ChatGPT
+
+Use the public MCP URL:
 
 ```text
-https://mcp.example.com/mcp
+https://your-domain.example/mcp
 ```
 
-`TAUTLINE_PUBLIC_BASE_URL` and `TAUTLINE_WIDGET_DOMAIN` must contain the public origin only, without `/mcp`.
+Complete the owner authorization flow with the private token stored in `.env` or `.owner_token.txt`. Never paste that token into public documentation, source control, or issue reports.
 
-The dashboard itself remains local and returns `404` without a valid local admin session.
+## 5. Verify the activity monitor
 
-## 5. Add the MCP connection
-
-Create a custom MCP connection in ChatGPT using the public `/mcp` URL. Complete the OAuth flow with the owner token stored in `.env`.
-
-After changing the public origin, OAuth metadata, tool descriptors, or widget resources, refresh the MCP connection metadata before testing again.
-
-## 6. Verify the workflow
-
-Ask ChatGPT to open a project inside an allowed root:
+Call `open_workspace` for an allowed project directory. Tautline should create one activity monitor using:
 
 ```text
-Use Tautline to open /path/to/allowed/project and explain the repository structure.
+ui://tautline/activity-v1.html
 ```
 
-With `TAUTLINE_WIDGETS=changes`, the expected coding flow is:
+Later workspace, command, browser, skill, agent, and external-MCP calls update the same monitor.
 
-1. `open_workspace` returns one compact workspace card and a reusable `workspace_id`.
-2. Search, read, command, write, and edit calls stay compact.
-3. `show_changes` renders one aggregate review after the final modification.
-4. Repository-specific tests and builds run before completion is reported.
+## 6. Google Docs integration
+
+Tautline v2.4.0 can connect to Google's official Docs MCP endpoint. Register this OAuth redirect URI in the Google Cloud OAuth client:
+
+```text
+http://127.0.0.1:8765/oauth/callback
+```
+
+After the connector is configured, authorize it locally:
+
+```powershell
+bin\tautline.exe -auth-mcp google_docs
+```
+
+The resulting token is stored under `runtime/v2/oauth/` and is excluded by `.gitignore`.
 
 ## Troubleshooting
 
-- Confirm `/healthz` succeeds locally.
-- Confirm the public tunnel forwards to port `7688`.
-- Confirm the public origin exactly matches `TAUTLINE_PUBLIC_BASE_URL` and `TAUTLINE_WIDGET_DOMAIN`.
-- Confirm the requested project is inside `TAUTLINE_ALLOWED_ROOTS`.
-- Confirm `TAUTLINE_REQUIRE_AUTH=true` for a public deployment.
-- Refresh the MCP connection after changing OAuth or widget metadata.
-- Check the dashboard for 9Router, model allowlist, sub-agent, Lightpanda, and tunnel status.
-- For rejected delegation, confirm global delegation is enabled and the requested model appears in the allowlist.
-
-Tautline uses stateless Streamable HTTP responses and disables standalone GET streaming. A client may intentionally cancel a completed request; verify `/healthz` before treating that log entry as an outage.
+- Confirm `healthz` reports service `Tautline` and version `2.4.0`.
+- Confirm the tunnel forwards to port `7688`.
+- Confirm the public base URL and widget domain contain only the HTTPS origin.
+- Confirm `.env`, owner tokens, OAuth tokens, runtime state, and executables remain untracked.

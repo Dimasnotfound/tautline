@@ -1,22 +1,22 @@
-# Secrets and local configuration
+# Secrets and machine-local configuration
 .env
 .env.*
 !.env.example
+.owner_token.txt
 *.pem
 *.key
 *.p12
 *.pfx
 
-# Tautline runtime state
+# Tautline runtime state and credentials
 runtime/*
 !runtime/.gitkeep
 .tautline/
 .devspace/
-.owner_token.txt
 *.pid
 *.log
 
-# Build outputs
+# Build outputs and generated Windows resources
 bin/
 dist/
 build/
@@ -25,8 +25,9 @@ build/
 *.dll
 *.so
 *.dylib
+*.syso
 
-# Dependencies and caches
+# Dependencies, caches, and temporary files
 node_modules/
 vendor/
 coverage/
@@ -35,13 +36,14 @@ tmp/
 __pycache__/
 *.pyc
 
-# IDE and OS
+# IDE and operating-system files
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+Desktop.ini
 
-# Local tests and previews
+# Local test workspaces and previews
 .test-workspace*/
 widget-preview*
 *.local

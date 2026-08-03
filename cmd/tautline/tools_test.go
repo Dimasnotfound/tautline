@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
 )
 
 func TestUnifiedDiffOnlyShowsInsertedLine(t *testing.T) {
@@ -102,173 +104,100 @@ func TestLanguageFromPath(t *testing.T) {
 	}
 }
 
-func TestWidgetDocumentIsLightweight(t *testing.T) {
-	html := toolCardWidgetHTML()
-	if len(html) > 36*1024 {
-		t.Fatalf("tool card widget is too large: %d bytes", len(html))
+func TestActivityWidgetIsSingleAndLightweight(t *testing.T) {
+	html := activityWidgetHTML()
+	if len(html) > 24*1024 {
+		t.Fatalf("activity widget is too large: %d bytes", len(html))
 	}
-	if strings.Contains(html, "<script src=") || strings.Contains(html, "https://") {
-		t.Fatal("tool card widget must not load external assets")
+	lower := strings.ToLower(html)
+	if strings.Contains(lower, "<script src=") || strings.Contains(lower, "<link rel=\"stylesheet\"") || strings.Contains(lower, "https://") {
+		t.Fatal("activity widget must be self-contained and must not load external assets")
 	}
 	for _, marker := range []string{
+		"activity_snapshot",
+		"tools/call",
 		"ui/notifications/tool-result",
-		"devspace/widgetData",
-		"Opened workspace",
-		"Searched workspace",
-		"Read file",
-		"Wrote file",
-		"Edited file",
-		"Ran command",
-		"Read artifact",
-		"Changed ",
-		"Matched Hermes skills",
-		"Loaded skill",
-		"Read skill file",
-		"skill-badge",
-		"tool-header",
-		"tool-icon",
-	} {
-		if !strings.Contains(html, marker) {
-			t.Fatalf("tool card widget is missing %q", marker)
-		}
-	}
-}
-
-func TestAllWidgetTemplatesAreSelfContainedAndSyntacticallyValid(t *testing.T) {
-	templates := map[string]string{
-		"tool-card": toolCardWidgetHTML(),
-		"workspace": workspaceWidgetHTML(),
-		"file":      fileWidgetHTML(),
-		"diff":      diffWidgetHTML(),
-		"command":   commandWidgetHTML(),
-		"changes":   changesWidgetHTML(),
-	}
-	nodePath, nodeErr := exec.LookPath("node")
-	for name, html := range templates {
-		t.Run(name, func(t *testing.T) {
-			lower := strings.ToLower(html)
-			for _, marker := range []string{"<!doctype html>", "<html", "<head>", "<body", "<script>", "</script>", "</html>"} {
-				if !strings.Contains(lower, marker) {
-					t.Fatalf("template is missing %q", marker)
-				}
-			}
-			if strings.Contains(lower, "<script src=") || strings.Contains(lower, "<link rel=\"stylesheet\"") || strings.Contains(lower, "https://") {
-				t.Fatal("template must be self-contained and must not load external assets")
-			}
-			start := strings.Index(lower, "<script>")
-			end := strings.LastIndex(lower, "</script>")
-			if start < 0 || end <= start {
-				t.Fatal("template script could not be extracted")
-			}
-			if nodeErr != nil {
-				t.Log("node unavailable; skipped JavaScript syntax validation")
-				return
-			}
-			script := html[start+len("<script>") : end]
-			path := filepath.Join(t.TempDir(), name+".js")
-			if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			if output, err := exec.Command(nodePath, "--check", path).CombinedOutput(); err != nil {
-				t.Fatalf("invalid JavaScript: %v\n%s", err, output)
-			}
-		})
-	}
-}
-
-func TestActiveWidgetHasFailureAndResizeRecovery(t *testing.T) {
-	html := toolCardWidgetHTML()
-	for _, marker := range []string{
-		"renderFailure",
-		"Tautline template could not render",
 		"ui/notifications/size-changed",
 		"ResizeObserver",
-		"envelope.isError",
-		"typeof envelope.kind",
-		"payload.status",
+		"renderFailure",
+		"Tautline activity is unavailable",
+		"timeline",
+		"inspector",
+		"prefers-reduced-motion",
 	} {
 		if !strings.Contains(html, marker) {
-			t.Fatalf("hardened widget is missing %q", marker)
+			t.Fatalf("activity widget is missing %q", marker)
 		}
 	}
 }
 
-func TestWidgetIntrinsicHeightUsesRenderedContentOnly(t *testing.T) {
-	templates := map[string]string{
-		"tool-card": toolCardWidgetHTML(),
-		"shared":    widgetDocument("test", "mount(function() {});"),
+func TestActivityWidgetJavaScriptIsValid(t *testing.T) {
+	html := activityWidgetHTML()
+	lower := strings.ToLower(html)
+	for _, marker := range []string{"<!doctype html>", "<html", "<head>", "<body", "<script>", "</script>", "</html>"} {
+		if !strings.Contains(lower, marker) {
+			t.Fatalf("widget is missing %q", marker)
+		}
 	}
-	for name, html := range templates {
-		t.Run(name, func(t *testing.T) {
-			for _, forbidden := range []string{
-				"document.body.scrollHeight",
-				"document.documentElement.scrollHeight",
-				"window.innerHeight",
-			} {
-				if strings.Contains(html, forbidden) {
-					t.Fatalf("template measures iframe viewport height through %q", forbidden)
-				}
-			}
-			for _, required := range []string{
-				"app.firstElementChild || app",
-				"getBoundingClientRect()",
-				"ui/notifications/size-changed",
-			} {
-				if !strings.Contains(html, required) {
-					t.Fatalf("content-sized template is missing %q", required)
-				}
-			}
-		})
+	start := strings.Index(lower, "<script>")
+	end := strings.LastIndex(lower, "</script>")
+	if start < 0 || end <= start {
+		t.Fatal("widget script could not be extracted")
+	}
+	nodePath, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable; skipped JavaScript syntax validation")
+	}
+	path := filepath.Join(t.TempDir(), "activity.js")
+	if err := os.WriteFile(path, []byte(html[start+len("<script>"):end]), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(nodePath, "--check", path).CombinedOutput(); err != nil {
+		t.Fatalf("invalid JavaScript: %v\n%s", err, output)
 	}
 }
 
-func TestWidgetResourceAliasesAreUniqueAndCompatible(t *testing.T) {
-	expected := map[string]bool{
-		"ui://tautline/tool-card-v2.html":      false,
-		"ui://tautline/tool-card-v1.html":      false,
-		"ui://devspace/tool-card-v5.html":      false,
-		"ui://devspace/tool-card-v4.html":      false,
-		"ui://devspace/tool-card-v3.html":      false,
-		"ui://devspace/tool-card-v2.html":      false,
-		"ui://devspace/tool-card-v1.html":      false,
-		"ui://devspace/workspace-card-v3.html": false,
-		"ui://devspace/workspace-card-v2.html": false,
-		"ui://devspace/file-viewer-v2.html":    false,
-		"ui://devspace/diff-viewer-v2.html":    false,
-		"ui://devspace/command-result-v2.html": false,
-		"ui://devspace/changes-review-v1.html": false,
+func TestActivityWidgetUsesRenderedContentHeight(t *testing.T) {
+	html := activityWidgetHTML()
+	for _, forbidden := range []string{"document.body.scrollHeight", "document.documentElement.scrollHeight", "window.innerHeight"} {
+		if strings.Contains(html, forbidden) {
+			t.Fatalf("widget measures iframe viewport height through %q", forbidden)
+		}
 	}
+	for _, required := range []string{"app.getBoundingClientRect().height", "ui/notifications/size-changed"} {
+		if !strings.Contains(html, required) {
+			t.Fatalf("content-sized widget is missing %q", required)
+		}
+	}
+}
+
+func TestOnlyOneWidgetResourceIsRegistered(t *testing.T) {
 	definitions := widgetResourceDefinitions()
-	if len(definitions) != len(expected) {
-		t.Fatalf("unexpected widget resource count: got %d want %d", len(definitions), len(expected))
+	if len(definitions) != 1 {
+		t.Fatalf("widget resource count=%d, want 1", len(definitions))
 	}
-	for _, definition := range definitions {
-		seen, exists := expected[definition.URI]
-		if !exists {
-			t.Fatalf("unexpected widget URI %q", definition.URI)
-		}
-		if seen {
-			t.Fatalf("duplicate widget URI %q", definition.URI)
-		}
-		expected[definition.URI] = true
+	if definitions[0].URI != activityWidgetURI {
+		t.Fatalf("widget URI=%q, want %q", definitions[0].URI, activityWidgetURI)
 	}
-	for uri, seen := range expected {
-		if !seen {
-			t.Fatalf("missing compatibility URI %q", uri)
+	for _, legacy := range []string{"tool-card", "devspace", "workspace-card", "file-viewer", "diff-viewer", "command-result"} {
+		if strings.Contains(definitions[0].URI, legacy) {
+			t.Fatalf("legacy widget alias remained in %q", definitions[0].URI)
 		}
 	}
 }
 
 func TestWidgetDomainMetadataUsesDedicatedOrigin(t *testing.T) {
+	t.Setenv("TAUTLINE_WIDGET_DOMAIN", "")
+	t.Setenv("TAUTLINE_PUBLIC_BASE_URL", "")
 	t.Setenv("DEVSPACE_WIDGET_DOMAIN", "")
-	t.Setenv("DEVSPACE_PUBLIC_BASE_URL", "https://mcp.example.test/mcp?ignored=true")
+	t.Setenv("DEVSPACE_PUBLIC_BASE_URL", "https://devspace.primacodes.com/mcp?ignored=true")
 
 	meta := widgetResourceMetaMap("DevSpace test widget")
 	uiMeta, ok := meta["ui"].(map[string]any)
 	if !ok {
 		t.Fatal("ui metadata is missing or invalid")
 	}
-	const publicOrigin = "https://mcp.example.test"
+	const publicOrigin = "https://devspace.primacodes.com"
 	if uiMeta["domain"] != publicOrigin {
 		t.Fatalf("ui.domain=%v, want %s", uiMeta["domain"], publicOrigin)
 	}
@@ -276,16 +205,18 @@ func TestWidgetDomainMetadataUsesDedicatedOrigin(t *testing.T) {
 		t.Fatalf("openai/widgetDomain=%v, want %s", meta["openai/widgetDomain"], publicOrigin)
 	}
 
-	t.Setenv("DEVSPACE_WIDGET_DOMAIN", "https://widgets.example.test/app/path")
+	t.Setenv("DEVSPACE_WIDGET_DOMAIN", "https://widgets.primacodes.com/app/path")
 	meta = widgetResourceMetaMap("DevSpace test widget")
 	uiMeta = meta["ui"].(map[string]any)
-	const dedicatedOrigin = "https://widgets.example.test"
+	const dedicatedOrigin = "https://widgets.primacodes.com"
 	if uiMeta["domain"] != dedicatedOrigin || meta["openai/widgetDomain"] != dedicatedOrigin {
 		t.Fatalf("explicit widget domain did not override public base URL: %+v", meta)
 	}
 }
 
 func TestWidgetDomainRejectsInsecureOrigin(t *testing.T) {
+	t.Setenv("TAUTLINE_WIDGET_DOMAIN", "")
+	t.Setenv("TAUTLINE_PUBLIC_BASE_URL", "")
 	t.Setenv("DEVSPACE_WIDGET_DOMAIN", "http://widgets.example.test")
 	t.Setenv("DEVSPACE_PUBLIC_BASE_URL", "")
 	meta := widgetResourceMetaMap("DevSpace test widget")
@@ -456,13 +387,13 @@ func TestWorkspaceModelPayloadReduction(t *testing.T) {
 		t.Fatalf("compact workspace payload is not at least 90%% smaller: full=%d compact=%d", len(fullJSON), len(compactJSON))
 	}
 
-	result := newWidgetToolResult(compact, full, "workspace ready")
+	result := mcp.NewToolResultStructured(compact, "workspace ready")
 	encoded, err := json.Marshal(result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(encoded), "devspace/widgetData") {
-		t.Fatal("full widget data was not attached to hidden tool metadata")
+	if strings.Contains(string(encoded), "widgetData") || len(encoded) >= len(fullJSON) {
+		t.Fatalf("workspace result was not kept data-only and compact: %s", encoded)
 	}
 }
 
@@ -487,7 +418,7 @@ func TestResolvePathRejectsSymlinkEscape(t *testing.T) {
 }
 
 func TestParseWidgetMode(t *testing.T) {
-	for input, expected := range map[string]widgetMode{"": widgetModeFull, "changes": widgetModeChanges, "full": widgetModeFull, "off": widgetModeOff} {
+	for input, expected := range map[string]widgetMode{"": widgetModeOn, "on": widgetModeOn, "changes": widgetModeOn, "full": widgetModeOn, "off": widgetModeOff} {
 		actual, err := parseWidgetMode(input)
 		if err != nil || actual != expected {
 			t.Fatalf("parseWidgetMode(%q)=%q, %v; want %q", input, actual, err, expected)
@@ -498,32 +429,45 @@ func TestParseWidgetMode(t *testing.T) {
 	}
 }
 
-func TestChangesModeKeepsSubagentWidgets(t *testing.T) {
+func TestOnlyOpenWorkspaceOwnsWidgetMetadata(t *testing.T) {
 	previousMode := activeWidgetMode
-	activeWidgetMode = widgetModeChanges
+	activeWidgetMode = widgetModeOn
 	t.Cleanup(func() { activeWidgetMode = previousMode })
 
-	for _, toolName := range []string{"open_workspace", "show_changes", "list_subagents", "delegate_task", "get_agent_run", "cancel_agent_run"} {
-		if !widgetEnabledForTool(toolName) {
-			t.Fatalf("changes mode must enable the widget for %s", toolName)
+	mcpServer := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(true))
+	registerTools(mcpServer)
+	tools := mcpServer.ListTools()
+	widgetTools := []string{}
+	for name, entry := range tools {
+		encoded, err := json.Marshal(entry.Tool)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(encoded), "openai/outputTemplate") {
+			widgetTools = append(widgetTools, name)
 		}
 	}
-	for _, toolName := range []string{"search", "read", "write", "edit", "bash", "skills_search", "lightpanda_fetch"} {
-		if widgetEnabledForTool(toolName) {
-			t.Fatalf("changes mode unexpectedly enabled the widget for %s", toolName)
+	sort.Strings(widgetTools)
+	if len(widgetTools) != 1 || widgetTools[0] != "open_workspace" {
+		t.Fatalf("widget tools=%v, want only open_workspace", widgetTools)
+	}
+	openTool, exists := tools["open_workspace"]
+	if !exists {
+		t.Fatal("open_workspace tool is missing")
+	}
+	encodedOpen, _ := json.Marshal(openTool.Tool)
+	for _, marker := range []string{activityWidgetURI, "openai/widgetAccessible", "resourceUri"} {
+		if !strings.Contains(string(encodedOpen), marker) {
+			t.Fatalf("open_workspace metadata is missing %q: %s", marker, encodedOpen)
 		}
 	}
-
-	tool := mcp.NewTool("delegate_task")
-	maybeSetWidgetMeta("delegate_task", &tool, toolCardWidgetURI, "Delegating task", "Task delegated")
-	encodedTool, err := json.Marshal(tool)
-	if err != nil {
-		t.Fatal(err)
+	activityTool, exists := tools["activity_snapshot"]
+	if !exists {
+		t.Fatal("activity_snapshot tool is missing")
 	}
-	for _, marker := range []string{"openai/outputTemplate", "ui://tautline/tool-card-v2.html", "resourceUri"} {
-		if !strings.Contains(string(encodedTool), marker) {
-			t.Fatalf("delegate_task metadata is missing %q: %s", marker, encodedTool)
-		}
+	encodedActivity, _ := json.Marshal(activityTool.Tool)
+	if !strings.Contains(string(encodedActivity), "private") || !strings.Contains(string(encodedActivity), "app") || strings.Contains(string(encodedActivity), "outputTemplate") {
+		t.Fatalf("activity_snapshot is not app-only: %s", encodedActivity)
 	}
 
 	result := newToolResult("delegate_task", map[string]string{"kind": "agent_run"}, map[string]string{"kind": "agent_run"}, "delegated")
@@ -531,8 +475,8 @@ func TestChangesModeKeepsSubagentWidgets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(encodedResult), "tautline/widgetData") {
-		t.Fatal("delegate_task result is missing widget data in changes mode")
+	if strings.Contains(string(encodedResult), "widgetData") {
+		t.Fatalf("data-only tool result contains widget metadata: %s", encodedResult)
 	}
 }
 

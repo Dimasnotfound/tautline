@@ -15,6 +15,16 @@ type wslConfig struct {
 	Path   string `json:"path"`
 }
 
+var lightpandaPathFlags = map[string]bool{
+	"--ca-cert":               true,
+	"--ca-path":               true,
+	"--cookie":                true,
+	"--cookie-jar":            true,
+	"--http-cache-dir":        true,
+	"--storage-sqlite-path":   true,
+	"--web-bot-auth-key-file": true,
+}
+
 func main() {
 	if runtime.GOOS != "windows" {
 		fmt.Fprintln(os.Stderr, "the Tautline Lightpanda shim is only required on Windows")
@@ -24,16 +34,37 @@ func main() {
 	config, err := loadConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Lightpanda is not installed for Tautline:", err)
-		fmt.Fprintln(os.Stderr, "Run scripts\\install-lightpanda-v2.1.0.cmd first.")
+		fmt.Fprintln(os.Stderr, "Run scripts\\install-lightpanda-v2.2.0.cmd first.")
 		os.Exit(1)
 	}
 
-	arguments := make([]string, 0, len(os.Args)+5)
+	translated, err := translatePathArguments(os.Args[1:], func(path string) (string, error) {
+		arguments := []string{}
+		if strings.TrimSpace(config.Distro) != "" {
+			arguments = append(arguments, "-d", config.Distro)
+		}
+		arguments = append(arguments, "--exec", "wslpath", "-a", "-u", path)
+		output, translateErr := exec.Command("wsl.exe", arguments...).CombinedOutput()
+		if translateErr != nil {
+			return "", fmt.Errorf("translate Windows path %s: %s", path, strings.TrimSpace(string(output)))
+		}
+		value := strings.TrimSpace(string(output))
+		if value == "" || !strings.HasPrefix(value, "/") {
+			return "", fmt.Errorf("wslpath returned an invalid path for %s", path)
+		}
+		return value, nil
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "could not prepare Lightpanda arguments:", err)
+		os.Exit(1)
+	}
+
+	arguments := make([]string, 0, len(translated)+5)
 	if strings.TrimSpace(config.Distro) != "" {
 		arguments = append(arguments, "-d", config.Distro)
 	}
 	arguments = append(arguments, "--exec", config.Path)
-	arguments = append(arguments, os.Args[1:]...)
+	arguments = append(arguments, translated...)
 
 	command := exec.Command("wsl.exe", arguments...)
 	command.Stdin = os.Stdin
@@ -49,6 +80,68 @@ func main() {
 	}
 }
 
+func translatePathArguments(arguments []string, translate func(string) (string, error)) ([]string, error) {
+	result := append([]string(nil), arguments...)
+	for index := 0; index < len(result); index++ {
+		argument := result[index]
+		flagName := argument
+		value := ""
+		inline := false
+		if separator := strings.IndexByte(argument, '='); separator > 0 {
+			flagName = argument[:separator]
+			value = argument[separator+1:]
+			inline = true
+		}
+		if !lightpandaPathFlags[flagName] {
+			continue
+		}
+		if !inline {
+			if index+1 >= len(result) {
+				return nil, fmt.Errorf("%s requires a path value", flagName)
+			}
+			index++
+			value = result[index]
+		}
+		if !isWindowsAbsolutePath(value) {
+			continue
+		}
+		translated, err := translate(value)
+		if err != nil {
+			return nil, err
+		}
+		if inline {
+			result[index] = flagName + "=" + translated
+		} else {
+			result[index] = translated
+		}
+	}
+	return result, nil
+}
+
+func isWindowsAbsolutePath(path string) bool {
+	path = strings.TrimSpace(path)
+	if len(path) < 3 || path[1] != ':' {
+		return false
+	}
+	return (path[0] >= 'A' && path[0] <= 'Z' || path[0] >= 'a' && path[0] <= 'z') && (path[2] == '\\' || path[2] == '/')
+}
+
+func findConfigPath(startDirectory string) (string, error) {
+	directory := filepath.Clean(startDirectory)
+	for depth := 0; depth < 8; depth++ {
+		candidate := filepath.Join(directory, "runtime", "v2", "config", "lightpanda-wsl.json")
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate, nil
+		}
+		parent := filepath.Dir(directory)
+		if parent == directory {
+			break
+		}
+		directory = parent
+	}
+	return "", fmt.Errorf("could not find runtime\\v2\\config\\lightpanda-wsl.json above %s", startDirectory)
+}
+
 func loadConfig() (wslConfig, error) {
 	if distro := strings.TrimSpace(os.Getenv("TAUTLINE_LIGHTPANDA_WSL_DISTRO")); distro != "" {
 		path := strings.TrimSpace(os.Getenv("TAUTLINE_LIGHTPANDA_WSL_PATH"))
@@ -62,8 +155,10 @@ func loadConfig() (wslConfig, error) {
 	if err != nil {
 		return wslConfig{}, err
 	}
-	root := filepath.Dir(filepath.Dir(executable))
-	configPath := filepath.Join(root, "runtime", "v2", "config", "lightpanda-wsl.json")
+	configPath, err := findConfigPath(filepath.Dir(executable))
+	if err != nil {
+		return wslConfig{}, err
+	}
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return wslConfig{}, fmt.Errorf("read %s: %w", configPath, err)

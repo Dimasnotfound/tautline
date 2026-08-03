@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only bridge between Tautline and the installed Hermes skill loader.
+"""Read-only bridge between DevSpace and the installed Hermes skill loader.
 
 The bridge intentionally imports Hermes' own discovery, compatibility, and
 skill-view code. Runtime hooks that can persist state, capture secrets, or
@@ -554,7 +554,7 @@ def _safe_view(
         return _error(f"skill '{name}' was not found in the Hermes index")
     if not match.get("compatible") and not allow_incompatible:
         return _error(
-            f"skill '{name}' is not compatible with the current platform or Tautline toolset",
+            f"skill '{name}' is not compatible with the current platform or DevSpace toolset",
             compatibility=match,
         )
     identifier = str(match.get("identifier") or match.get("name") or name)

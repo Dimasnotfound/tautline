@@ -12,13 +12,7 @@ import (
 
 const (
 	widgetMIMEType    = "text/html;profile=mcp-app"
-	toolCardWidgetURI = "ui://tautline/tool-card-v2.html"
-
-	workspaceWidgetURI = toolCardWidgetURI
-	fileWidgetURI      = toolCardWidgetURI
-	diffWidgetURI      = toolCardWidgetURI
-	commandWidgetURI   = toolCardWidgetURI
-	changesWidgetURI   = toolCardWidgetURI
+	activityWidgetURI = "ui://tautline/activity-v1.html"
 )
 
 type widgetResourceDefinition struct {
@@ -28,99 +22,35 @@ type widgetResourceDefinition struct {
 }
 
 func widgetResourceDefinitions() []widgetResourceDefinition {
-	return []widgetResourceDefinition{
-		{
-			URI:         toolCardWidgetURI,
-			Name:        "Tautline tool and agent card",
-			Description: "A compact Tautline card for workspace tools, command evidence, browser results, and live sub-agent activity.",
-		},
-		{
-			URI:         "ui://tautline/tool-card-v1.html",
-			Name:        "Tautline v2 preview compatibility alias",
-			Description: "Compatibility alias for early Tautline v2 tool cards.",
-		},
-		{
-			URI:         "ui://devspace/tool-card-v5.html",
-			Name:        "DevSpace v1.8 compatibility alias",
-			Description: "Compatibility alias for conversations cached from DevSpace v1.8.0.",
-		},
-		{
-			URI:         "ui://devspace/tool-card-v4.html",
-			Name:        "DevSpace v1.7 compatibility alias",
-			Description: "Compatibility alias for conversations cached from DevSpace v1.7.0.",
-		},
-		{
-			URI:         "ui://devspace/tool-card-v3.html",
-			Name:        "DevSpace legacy compatibility alias",
-			Description: "Compatibility alias for older DevSpace tool cards.",
-		},
-		{
-			URI:         "ui://devspace/tool-card-v2.html",
-			Name:        "DevSpace legacy compatibility alias",
-			Description: "Compatibility alias for older DevSpace tool cards.",
-		},
-		{
-			URI:         "ui://devspace/tool-card-v1.html",
-			Name:        "DevSpace legacy compatibility alias",
-			Description: "Compatibility alias for older DevSpace tool cards.",
-		},
-		{
-			URI:         "ui://devspace/workspace-card-v3.html",
-			Name:        "DevSpace workspace compatibility alias",
-			Description: "Compatibility alias for older DevSpace workspace cards.",
-		},
-		{
-			URI:         "ui://devspace/workspace-card-v2.html",
-			Name:        "DevSpace workspace compatibility alias",
-			Description: "Compatibility alias for older DevSpace workspace cards.",
-		},
-		{
-			URI:         "ui://devspace/file-viewer-v2.html",
-			Name:        "DevSpace file compatibility alias",
-			Description: "Compatibility alias for older DevSpace file cards.",
-		},
-		{
-			URI:         "ui://devspace/diff-viewer-v2.html",
-			Name:        "DevSpace diff compatibility alias",
-			Description: "Compatibility alias for older DevSpace diff cards.",
-		},
-		{
-			URI:         "ui://devspace/command-result-v2.html",
-			Name:        "DevSpace command compatibility alias",
-			Description: "Compatibility alias for older DevSpace command cards.",
-		},
-		{
-			URI:         "ui://devspace/changes-review-v1.html",
-			Name:        "DevSpace changes compatibility alias",
-			Description: "Compatibility alias for older DevSpace change cards.",
-		},
-	}
+	return []widgetResourceDefinition{{
+		URI:         activityWidgetURI,
+		Name:        "Tautline activity monitor",
+		Description: "One live Tautline monitor for workspace activity, file changes, commands, agents, browser actions, skills, and connected MCP tools.",
+	}}
 }
 
 func registerWidgetResource(s *server.MCPServer) {
 	if activeWidgetMode == widgetModeOff {
 		return
 	}
-	for _, definition := range widgetResourceDefinitions() {
-		definition := definition
-		resource := mcp.NewResource(
-			definition.URI,
-			definition.Name,
-			mcp.WithResourceDescription(definition.Description),
-			mcp.WithMIMEType(widgetMIMEType),
-		)
-		resource.Meta = widgetResourceMeta(definition.Description)
-		s.AddResource(resource, func(context.Context, mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
-			return []mcp.ResourceContents{
-				mcp.TextResourceContents{
-					URI:      definition.URI,
-					MIMEType: widgetMIMEType,
-					Text:     toolCardWidgetHTML(),
-					Meta:     widgetResourceMetaMap(definition.Description),
-				},
-			}, nil
-		})
-	}
+	definition := widgetResourceDefinitions()[0]
+	resource := mcp.NewResource(
+		definition.URI,
+		definition.Name,
+		mcp.WithResourceDescription(definition.Description),
+		mcp.WithMIMEType(widgetMIMEType),
+	)
+	resource.Meta = widgetResourceMeta(definition.Description)
+	s.AddResource(resource, func(context.Context, mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
+		return []mcp.ResourceContents{
+			mcp.TextResourceContents{
+				URI:      definition.URI,
+				MIMEType: widgetMIMEType,
+				Text:     activityWidgetHTML(),
+				Meta:     widgetResourceMetaMap(definition.Description),
+			},
+		}, nil
+	})
 }
 
 func widgetResourceMeta(description string) *mcp.Meta {
@@ -129,7 +59,7 @@ func widgetResourceMeta(description string) *mcp.Meta {
 
 func widgetResourceMetaMap(description string) map[string]any {
 	uiMeta := map[string]any{
-		"prefersBorder": true,
+		"prefersBorder": false,
 		"csp": map[string]any{
 			"connectDomains":  []string{},
 			"resourceDomains": []string{},
@@ -138,7 +68,7 @@ func widgetResourceMetaMap(description string) map[string]any {
 	meta := map[string]any{
 		"ui":                         uiMeta,
 		"openai/widgetDescription":   description,
-		"openai/widgetPrefersBorder": true,
+		"openai/widgetPrefersBorder": false,
 		"openai/widgetCSP": map[string]any{
 			"connect_domains":  []string{},
 			"resource_domains": []string{},

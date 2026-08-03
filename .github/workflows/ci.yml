@@ -29,10 +29,12 @@ jobs:
           node-version: '22'
 
       - name: Verify formatting
-        run: test -z "$(gofmt -l .)"
+        run: test -z "$(gofmt -l cmd)"
 
-      - name: Check Python bridge
-        run: python -m py_compile cmd/tautline/bridge/hermes_skill_bridge.py
+      - name: Check Python sources
+        run: |
+          python -m py_compile cmd/tautline/hermes_skill_bridge.py
+          python -m py_compile scripts/generate-icon.py
 
       - name: Check dashboard JavaScript
         run: node --check cmd/tautline/web/app.js
@@ -63,17 +65,20 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Test
-        env:
-          TAUTLINE_WIDGET_DOMAIN: ''
-          TAUTLINE_PUBLIC_BASE_URL: ''
-        run: go test -count=1 ./...
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
 
-      - name: Build Tautline
-        run: go build -trimpath -o bin/tautline.exe ./cmd/tautline
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
-      - name: Build Lightpanda shim
-        run: go build -trimpath -o bin/lightpanda-shim.exe ./cmd/lightpanda-shim
+      - name: Install icon dependency
+        run: python -m pip install pillow
+
+      - name: Build and verify Windows executables
+        shell: powershell
+        run: ./scripts/build.ps1
 
   secret-scan:
     name: Secret scan

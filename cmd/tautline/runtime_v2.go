@@ -17,6 +17,8 @@ type applicationRuntime struct {
 	config      *configStore
 	router      *routerClient
 	lightpanda  *lightpandaManager
+	activity    *activityStore
+	mcpClients  *externalMCPManager
 	tunnel      *tunnelManager
 	agents      *agentManager
 	adminKey    string
@@ -41,11 +43,14 @@ func newApplicationRuntime(store *configStore) (*applicationRuntime, error) {
 	if err != nil {
 		return nil, err
 	}
+	activity := newActivityStore()
 	return &applicationRuntime{
 		startedAt:  time.Now().UTC(),
 		config:     store,
 		router:     router,
 		lightpanda: lightpanda,
+		activity:   activity,
+		mcpClients: newExternalMCPManager(store),
 		tunnel:     newTunnelManager(store),
 		agents:     agents,
 		adminKey:   adminKey,
@@ -108,6 +113,8 @@ func (a *applicationRuntime) shutdown() {
 		}
 	}
 	_ = a.tunnel.stop()
+	a.mcpClients.closeAll()
+	_ = a.lightpanda.closeNativeMCP()
 	_ = a.lightpanda.stop()
 }
 

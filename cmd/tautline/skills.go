@@ -33,7 +33,7 @@ const (
 	maxBridgeOutputBytes    = 2 * 1024 * 1024
 )
 
-//go:embed bridge/hermes_skill_bridge.py
+//go:embed hermes_skill_bridge.py
 var embeddedHermesSkillBridge []byte
 
 type skillBridgeConfig struct {
@@ -261,7 +261,6 @@ func registerSkillTools(s *server.MCPServer) {
 		mcp.WithIdempotentHintAnnotation(true),
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
-	maybeSetWidgetMeta("skills_search", &searchTool, toolCardWidgetURI, "Matching Hermes skills", "Skills matched")
 	s.AddTool(searchTool, handleSkillsSearch)
 
 	viewTool := mcp.NewTool("skill_view",
@@ -276,7 +275,6 @@ func registerSkillTools(s *server.MCPServer) {
 		mcp.WithIdempotentHintAnnotation(true),
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
-	maybeSetWidgetMeta("skill_view", &viewTool, toolCardWidgetURI, "Loading Hermes skill", "Skill loaded")
 	s.AddTool(viewTool, handleSkillView)
 
 	readFileTool := mcp.NewTool("skill_read_file",
@@ -292,7 +290,6 @@ func registerSkillTools(s *server.MCPServer) {
 		mcp.WithIdempotentHintAnnotation(true),
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
-	maybeSetWidgetMeta("skill_read_file", &readFileTool, toolCardWidgetURI, "Reading skill file", "Skill file ready")
 	s.AddTool(readFileTool, handleSkillReadFile)
 }
 

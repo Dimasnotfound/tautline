@@ -30,12 +30,16 @@ type RouterConfig struct {
 }
 
 type LightpandaConfig struct {
-	Executable  string `json:"executable"`
-	DockerImage string `json:"docker_image"`
-	Host        string `json:"host"`
-	Port        int    `json:"port"`
-	AutoStart   bool   `json:"auto_start"`
-	ObeyRobots  bool   `json:"obey_robots"`
+	Executable           string `json:"executable"`
+	DockerImage          string `json:"docker_image"`
+	Host                 string `json:"host"`
+	Port                 int    `json:"port"`
+	AutoStart            bool   `json:"auto_start"`
+	ObeyRobots           bool   `json:"obey_robots"`
+	NativeMCP            bool   `json:"native_mcp"`
+	PersistSession       bool   `json:"persist_session"`
+	BlockPrivateNetworks bool   `json:"block_private_networks"`
+	NativeTimeoutSeconds int    `json:"native_timeout_seconds"`
 }
 
 type TunnelConfig struct {
@@ -47,22 +51,49 @@ type TunnelConfig struct {
 	AutoStart    bool   `json:"auto_start"`
 }
 
+type ExternalMCPOAuthConfig struct {
+	ClientID              string            `json:"client_id"`
+	ClientSecret          string            `json:"client_secret,omitempty"`
+	RedirectURI           string            `json:"redirect_uri"`
+	Scopes                []string          `json:"scopes"`
+	TokenFile             string            `json:"token_file,omitempty"`
+	AuthServerMetadataURL string            `json:"auth_server_metadata_url,omitempty"`
+	AuthorizationParams   map[string]string `json:"authorization_params,omitempty"`
+}
+
+type ExternalMCPConfig struct {
+	ID               string                  `json:"id"`
+	Name             string                  `json:"name"`
+	Prefix           string                  `json:"prefix"`
+	Transport        string                  `json:"transport"`
+	Enabled          bool                    `json:"enabled"`
+	Command          string                  `json:"command,omitempty"`
+	Args             []string                `json:"args,omitempty"`
+	WorkingDirectory string                  `json:"working_directory,omitempty"`
+	URL              string                  `json:"url,omitempty"`
+	Environment      map[string]string       `json:"environment,omitempty"`
+	Headers          map[string]string       `json:"headers,omitempty"`
+	OAuth            *ExternalMCPOAuthConfig `json:"oauth,omitempty"`
+	TimeoutSeconds   int                     `json:"timeout_seconds"`
+}
+
 type TautlineConfig struct {
-	Port              string            `json:"port"`
-	RuntimeDir        string            `json:"runtime_dir"`
-	OpenDashboard     bool              `json:"open_dashboard"`
-	PublicBaseURL     string            `json:"public_base_url,omitempty"`
-	WidgetDomain      string            `json:"widget_domain,omitempty"`
-	Router            RouterConfig      `json:"router"`
-	Lightpanda        LightpandaConfig  `json:"lightpanda"`
-	Tunnel            TunnelConfig      `json:"tunnel"`
-	AgentEnabled      bool              `json:"agent_enabled"`
-	AgentCapacity     int               `json:"agent_capacity"`
-	DefaultImageGate  bool              `json:"default_image_gate"`
-	DefaultRTK        bool              `json:"default_rtk"`
-	DefaultCaveman    bool              `json:"default_caveman"`
-	AgentTimeout      int               `json:"agent_timeout_seconds"`
-	AdditionalHeaders map[string]string `json:"additional_router_headers,omitempty"`
+	Port              string              `json:"port"`
+	RuntimeDir        string              `json:"runtime_dir"`
+	OpenDashboard     bool                `json:"open_dashboard"`
+	PublicBaseURL     string              `json:"public_base_url,omitempty"`
+	WidgetDomain      string              `json:"widget_domain,omitempty"`
+	Router            RouterConfig        `json:"router"`
+	Lightpanda        LightpandaConfig    `json:"lightpanda"`
+	Tunnel            TunnelConfig        `json:"tunnel"`
+	MCPServers        []ExternalMCPConfig `json:"mcp_servers,omitempty"`
+	AgentEnabled      bool                `json:"agent_enabled"`
+	AgentCapacity     int                 `json:"agent_capacity"`
+	DefaultImageGate  bool                `json:"default_image_gate"`
+	DefaultRTK        bool                `json:"default_rtk"`
+	DefaultCaveman    bool                `json:"default_caveman"`
+	AgentTimeout      int                 `json:"agent_timeout_seconds"`
+	AdditionalHeaders map[string]string   `json:"additional_router_headers,omitempty"`
 }
 
 type configStore struct {
@@ -83,12 +114,16 @@ func defaultTautlineConfig() TautlineConfig {
 			AllowedModels: []string{"auto"},
 		},
 		Lightpanda: LightpandaConfig{
-			Executable:  "auto",
-			DockerImage: "lightpanda/browser:nightly",
-			Host:        "127.0.0.1",
-			Port:        defaultLightpandaPort,
-			AutoStart:   false,
-			ObeyRobots:  true,
+			Executable:           "auto",
+			DockerImage:          "lightpanda/browser:nightly",
+			Host:                 "127.0.0.1",
+			Port:                 defaultLightpandaPort,
+			AutoStart:            false,
+			ObeyRobots:           true,
+			NativeMCP:            true,
+			PersistSession:       true,
+			BlockPrivateNetworks: true,
+			NativeTimeoutSeconds: 30,
 		},
 		Tunnel: TunnelConfig{
 			Mode:       "off",
@@ -160,6 +195,9 @@ func applyTautlineEnvironment(cfg *TautlineConfig) {
 	cfg.OpenDashboard = envBoolWithFallback("TAUTLINE_OPEN_DASHBOARD", cfg.OpenDashboard)
 	cfg.Lightpanda.AutoStart = envBoolWithFallback("TAUTLINE_LIGHTPANDA_AUTOSTART", cfg.Lightpanda.AutoStart)
 	cfg.Lightpanda.ObeyRobots = envBoolWithFallback("TAUTLINE_LIGHTPANDA_OBEY_ROBOTS", cfg.Lightpanda.ObeyRobots)
+	cfg.Lightpanda.NativeMCP = envBoolWithFallback("TAUTLINE_LIGHTPANDA_NATIVE_MCP", cfg.Lightpanda.NativeMCP)
+	cfg.Lightpanda.PersistSession = envBoolWithFallback("TAUTLINE_LIGHTPANDA_PERSIST_SESSION", cfg.Lightpanda.PersistSession)
+	cfg.Lightpanda.BlockPrivateNetworks = envBoolWithFallback("TAUTLINE_LIGHTPANDA_BLOCK_PRIVATE_NETWORKS", cfg.Lightpanda.BlockPrivateNetworks)
 	cfg.Tunnel.AutoStart = envBoolWithFallback("TAUTLINE_TUNNEL_AUTOSTART", cfg.Tunnel.AutoStart)
 	cfg.AgentEnabled = envBoolWithFallback("TAUTLINE_AGENT_ENABLED", cfg.AgentEnabled)
 	cfg.DefaultImageGate = envBoolWithFallback("TAUTLINE_AGENT_IMAGE_SUPPORT", cfg.DefaultImageGate)
@@ -168,6 +206,7 @@ func applyTautlineEnvironment(cfg *TautlineConfig) {
 	setIntEnv(&cfg.AgentCapacity, "TAUTLINE_AGENT_CAPACITY")
 	setIntEnv(&cfg.AgentTimeout, "TAUTLINE_AGENT_TIMEOUT_SECONDS")
 	setIntEnv(&cfg.Lightpanda.Port, "TAUTLINE_LIGHTPANDA_PORT")
+	setIntEnv(&cfg.Lightpanda.NativeTimeoutSeconds, "TAUTLINE_LIGHTPANDA_NATIVE_TIMEOUT_SECONDS")
 }
 
 func firstEnvironment(keys ...string) string {
@@ -305,6 +344,12 @@ func validateTautlineConfig(cfg *TautlineConfig) error {
 	if cfg.Lightpanda.Port < 1 || cfg.Lightpanda.Port > 65535 {
 		cfg.Lightpanda.Port = defaultLightpandaPort
 	}
+	if cfg.Lightpanda.NativeTimeoutSeconds < 5 {
+		cfg.Lightpanda.NativeTimeoutSeconds = 5
+	}
+	if cfg.Lightpanda.NativeTimeoutSeconds > 120 {
+		cfg.Lightpanda.NativeTimeoutSeconds = 120
+	}
 	cfg.Tunnel.Mode = strings.ToLower(strings.TrimSpace(cfg.Tunnel.Mode))
 	switch cfg.Tunnel.Mode {
 	case "", "off":
@@ -312,6 +357,9 @@ func validateTautlineConfig(cfg *TautlineConfig) error {
 	case "quick", "named":
 	default:
 		return fmt.Errorf("invalid tunnel mode %q", cfg.Tunnel.Mode)
+	}
+	if err := normalizeExternalMCPConfigs(&cfg.MCPServers); err != nil {
+		return err
 	}
 	return nil
 }
@@ -321,6 +369,7 @@ func (s *configStore) snapshot() TautlineConfig {
 	defer s.mu.RUnlock()
 	copyValue := s.value
 	copyValue.Router.AllowedModels = append([]string(nil), s.value.Router.AllowedModels...)
+	copyValue.MCPServers = cloneExternalMCPConfigs(s.value.MCPServers)
 	if s.value.AdditionalHeaders != nil {
 		copyValue.AdditionalHeaders = make(map[string]string, len(s.value.AdditionalHeaders))
 		for key, value := range s.value.AdditionalHeaders {

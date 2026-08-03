@@ -499,7 +499,7 @@ func TestDashboardRequiresAdminSessionAndCSRF(t *testing.T) {
 
 func TestWidgetResourceCanBeListedAndFetchedThroughMCPHTTP(t *testing.T) {
 	previousMode := activeWidgetMode
-	activeWidgetMode = widgetModeFull
+	activeWidgetMode = widgetModeOn
 	t.Cleanup(func() { activeWidgetMode = previousMode })
 
 	mcpServer := server.NewMCPServer(
@@ -537,19 +537,22 @@ func TestWidgetResourceCanBeListedAndFetchedThroughMCPHTTP(t *testing.T) {
 	})
 	listBody, _ := io.ReadAll(listResponse.Body)
 	_ = listResponse.Body.Close()
-	if listResponse.StatusCode != http.StatusOK || !bytes.Contains(listBody, []byte(toolCardWidgetURI)) {
+	if listResponse.StatusCode != http.StatusOK || !bytes.Contains(listBody, []byte(activityWidgetURI)) {
 		t.Fatalf("resources/list failed: %d %s", listResponse.StatusCode, listBody)
+	}
+	if bytes.Count(listBody, []byte("ui://tautline/")) != 1 {
+		t.Fatalf("resources/list returned more than one Tautline widget: %s", listBody)
 	}
 
 	readResponse := postMCPJSON(t, testServer.URL, sessionID, map[string]any{
-		"jsonrpc": "2.0", "id": 3, "method": "resources/read", "params": map[string]any{"uri": toolCardWidgetURI},
+		"jsonrpc": "2.0", "id": 3, "method": "resources/read", "params": map[string]any{"uri": activityWidgetURI},
 	})
 	readBody, _ := io.ReadAll(readResponse.Body)
 	_ = readResponse.Body.Close()
 	if readResponse.StatusCode != http.StatusOK {
 		t.Fatalf("resources/read returned %d: %s", readResponse.StatusCode, readBody)
 	}
-	for _, marker := range []string{toolCardWidgetURI, widgetMIMEType, "Tautline tool card", "tautline/widgetData"} {
+	for _, marker := range []string{activityWidgetURI, widgetMIMEType, "Tautline activity", "activity_snapshot", "tools/call"} {
 		if !bytes.Contains(readBody, []byte(marker)) {
 			t.Fatalf("fetched template is missing %q: %s", marker, readBody)
 		}

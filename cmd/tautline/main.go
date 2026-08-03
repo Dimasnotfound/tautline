@@ -55,12 +55,18 @@ func main() {
 	start := flag.Bool("start", false, "start Tautline")
 	stop := flag.Bool("stop", false, "stop the Tautline process for this port")
 	openOnly := flag.Bool("open-dashboard", false, "open the dashboard for the running Tautline instance")
+	authMCP := flag.String("auth-mcp", "", "authorize one OAuth-enabled external MCP connector")
 	port := flag.String("port", defaults.Port, "local dashboard and MCP port")
 	tunnelMode := flag.String("tunnel", "", "start Cloudflare tunnel mode: quick, named, or empty")
 	openDashboard := flag.Bool("dashboard", defaults.OpenDashboard, "open the local dashboard")
 	flag.Parse()
 
 	switch {
+	case strings.TrimSpace(*authMCP) != "":
+		if err := authorizeExternalMCP(store, *authMCP); err != nil {
+			fmt.Fprintln(os.Stderr, "MCP OAuth authorization failed:", err)
+			os.Exit(1)
+		}
 	case *openOnly:
 		doOpenDashboard(store, *port)
 	case *stop:
@@ -68,7 +74,7 @@ func main() {
 	case *start:
 		doStart(store, *port, *tunnelMode, *openDashboard)
 	default:
-		fmt.Printf("usage: tautline -start|-stop|-open-dashboard [-port %s] [-dashboard=true] [-tunnel=quick|named]\n", defaults.Port)
+		fmt.Printf("usage: tautline -start|-stop|-open-dashboard|-auth-mcp <id> [-port %s] [-dashboard=true] [-tunnel=quick|named]\n", defaults.Port)
 	}
 }
 
@@ -132,9 +138,29 @@ func doStart(store *configStore, port, requestedTunnelMode string, openDashboard
 		appVersion,
 		server.WithToolCapabilities(true),
 		server.WithInstructions(codingWorkflowInstructions()),
+		server.WithToolHandlerMiddleware(activityMiddleware(app.activity)),
 	)
 	registerWidgetResource(mcpServer)
 	registerTools(mcpServer)
+	app.mcpClients.attachServer(mcpServer)
+	if cfg.Lightpanda.NativeMCP {
+		startupContext, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Lightpanda.NativeTimeoutSeconds)*time.Second)
+		nativeTools, nativeErr := app.lightpanda.prepareNativeMCP(startupContext)
+		cancel()
+		if nativeErr != nil {
+			fmt.Fprintln(os.Stderr, "Lightpanda native MCP initialization failed:", nativeErr)
+			app.shutdown()
+			return
+		}
+		if err := registerLightpandaProxyTools(mcpServer, nativeTools, app.lightpanda.callNativeRequest); err != nil {
+			fmt.Fprintln(os.Stderr, "Lightpanda native MCP tool registration failed:", err)
+			app.shutdown()
+			return
+		}
+	}
+	for _, connectorErr := range app.mcpClients.startConfigured(context.Background()) {
+		fmt.Fprintln(os.Stderr, "External MCP connector:", connectorErr)
+	}
 	mcpHandler := server.NewStreamableHTTPServer(
 		mcpServer,
 		server.WithStateLess(true),
@@ -145,13 +171,14 @@ func doStart(store *configStore, port, requestedTunnelMode string, openDashboard
 	mux.Handle("/mcp", oauth.requireBearer(mcpHandler))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status":     "ok",
-			"service":    appName,
-			"version":    appVersion,
-			"widget":     toolCardWidgetURI,
-			"subagents":  len(app.agents.slotsSnapshot()),
-			"lightpanda": app.lightpanda.status(),
-			"tunnel":     app.tunnel.status(),
+			"status":      "ok",
+			"service":     appName,
+			"version":     appVersion,
+			"widget":      activityWidgetURI,
+			"subagents":   len(app.agents.slotsSnapshot()),
+			"mcp_clients": app.mcpClients.summary(),
+			"lightpanda":  app.lightpanda.status(),
+			"tunnel":      app.tunnel.status(),
 		})
 	})
 	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", oauth.protectedResourceMetadata)
@@ -200,7 +227,7 @@ func doStart(store *configStore, port, requestedTunnelMode string, openDashboard
 	fmt.Printf("Health: http://%s/healthz\n", address)
 	fmt.Printf("Allowed roots: %s\n", strings.Join(allowedRoots, ", "))
 	fmt.Printf("Sub-agent capacity: %d generic slots through 9Router\n", len(app.agents.slotsSnapshot()))
-	fmt.Printf("Widget resource: %s\n", toolCardWidgetURI)
+	fmt.Printf("Widget resource: %s\n", activityWidgetURI)
 	if openDashboard {
 		dashboardURL := fmt.Sprintf("http://%s/?admin=%s", address, app.adminKey)
 		if err := openLocalURL(dashboardURL); err != nil {

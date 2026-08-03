@@ -17,6 +17,7 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 $EnvPath = Join-Path $Root ".env"
+$OwnerTokenPath = Join-Path $Root ".owner_token.txt"
 
 if ((Test-Path $EnvPath) -and -not $Force) {
     throw ".env already exists. Use -Force only when you intend to replace it."
@@ -52,7 +53,7 @@ $Lines = @(
     "TAUTLINE_PORT=7688",
     "TAUTLINE_RUNTIME_DIR=runtime/v2",
     "TAUTLINE_OPEN_DASHBOARD=true",
-    "TAUTLINE_WIDGETS=changes",
+    "TAUTLINE_WIDGETS=on",
     "TAUTLINE_PUBLIC_BASE_URL=$PublicBaseUrl",
     "TAUTLINE_WIDGET_DOMAIN=$WidgetDomain",
     "TAUTLINE_9ROUTER_BASE_URL=http://127.0.0.1:20128/v1",
@@ -70,6 +71,10 @@ $Lines = @(
     "TAUTLINE_LIGHTPANDA_PORT=9223",
     "TAUTLINE_LIGHTPANDA_AUTOSTART=false",
     "TAUTLINE_LIGHTPANDA_OBEY_ROBOTS=true",
+    "TAUTLINE_LIGHTPANDA_NATIVE_MCP=true",
+    "TAUTLINE_LIGHTPANDA_PERSIST_SESSION=true",
+    "TAUTLINE_LIGHTPANDA_BLOCK_PRIVATE_NETWORKS=true",
+    "TAUTLINE_LIGHTPANDA_NATIVE_TIMEOUT_SECONDS=30",
     "TAUTLINE_CLOUDFLARED_PATH=bin/cloudflared.exe",
     "TAUTLINE_TUNNEL_MODE=$TunnelMode",
     "TAUTLINE_TUNNEL_NAME=$TunnelName",
@@ -80,7 +85,9 @@ $Lines = @(
 
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllLines($EnvPath, $Lines, $Utf8NoBom)
+[System.IO.File]::WriteAllText($OwnerTokenPath, $OwnerToken + [Environment]::NewLine, $Utf8NoBom)
 
 Write-Host "Created $EnvPath" -ForegroundColor Green
-Write-Host "Owner token generated and stored in .env (not printed)." -ForegroundColor Yellow
-Write-Host "The .env file is ignored by Git. Keep it private." -ForegroundColor DarkGray
+Write-Host "Created $OwnerTokenPath" -ForegroundColor Green
+Write-Host "The owner token was generated locally and was not printed." -ForegroundColor Yellow
+Write-Host "Both files are ignored by Git and must remain private." -ForegroundColor DarkGray

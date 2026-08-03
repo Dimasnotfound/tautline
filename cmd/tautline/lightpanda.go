@@ -15,21 +15,29 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	mcpclient "github.com/mark3labs/mcp-go/client"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 const maxBrowserOutputBytes = 512 * 1024
 
 type LightpandaStatus struct {
-	Available   bool   `json:"available"`
-	Detecting   bool   `json:"detecting"`
-	Starting    bool   `json:"starting"`
-	Running     bool   `json:"running"`
-	Mode        string `json:"mode,omitempty"`
-	Executable  string `json:"executable,omitempty"`
-	DockerImage string `json:"docker_image,omitempty"`
-	Endpoint    string `json:"endpoint"`
-	PID         int    `json:"pid,omitempty"`
-	LastError   string `json:"last_error,omitempty"`
+	Available        bool   `json:"available"`
+	Detecting        bool   `json:"detecting"`
+	Starting         bool   `json:"starting"`
+	Running          bool   `json:"running"`
+	Mode             string `json:"mode,omitempty"`
+	Executable       string `json:"executable,omitempty"`
+	DockerImage      string `json:"docker_image,omitempty"`
+	Endpoint         string `json:"endpoint"`
+	PID              int    `json:"pid,omitempty"`
+	NativeMCPReady   bool   `json:"native_mcp_ready"`
+	NativeMCPTools   int    `json:"native_mcp_tools"`
+	NativeMCPServer  string `json:"native_mcp_server,omitempty"`
+	NativeMCPVersion string `json:"native_mcp_version,omitempty"`
+	NativeMCPError   string `json:"native_mcp_error,omitempty"`
+	LastError        string `json:"last_error,omitempty"`
 }
 
 type BrowserFetchResult struct {
@@ -58,6 +66,14 @@ type lightpandaManager struct {
 	detecting      bool
 	starting       bool
 	lastError      string
+
+	nativeInitMu        sync.Mutex
+	nativeMu            sync.RWMutex
+	nativeClient        *mcpclient.Client
+	nativeTools         []mcp.Tool
+	nativeServerName    string
+	nativeServerVersion string
+	nativeLastError     string
 }
 
 func newLightpandaManager(store *configStore) *lightpandaManager {
@@ -170,12 +186,18 @@ func (m *lightpandaManager) status() LightpandaStatus {
 	if lastError == "" {
 		lastError = detectionError
 	}
+	nativeReady, nativeToolCount, nativeServerName, nativeServerVersion, nativeError := m.nativeMCPStatus()
 	status := LightpandaStatus{
-		Detecting:   detecting,
-		Starting:    starting,
-		Endpoint:    fmt.Sprintf("http://%s:%d", cfg.Host, cfg.Port),
-		LastError:   lastError,
-		DockerImage: cfg.DockerImage,
+		Detecting:        detecting,
+		Starting:         starting,
+		Endpoint:         fmt.Sprintf("http://%s:%d", cfg.Host, cfg.Port),
+		NativeMCPReady:   nativeReady,
+		NativeMCPTools:   nativeToolCount,
+		NativeMCPServer:  nativeServerName,
+		NativeMCPVersion: nativeServerVersion,
+		NativeMCPError:   nativeError,
+		LastError:        lastError,
+		DockerImage:      cfg.DockerImage,
 	}
 	if detectedRunner.mode != "" {
 		status.Available = true

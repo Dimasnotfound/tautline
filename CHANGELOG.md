@@ -2,6 +2,29 @@
 
 All notable changes to Tautline are documented here.
 
+## [2.4.0] - 2026-08-02
+
+### Added
+
+- One live workspace activity monitor at `ui://tautline/activity-v1.html`.
+- Generic external MCP integrations for local `stdio` and Streamable HTTP servers.
+- OAuth support for external MCP connectors, including the official Google Docs MCP endpoint.
+- Native Lightpanda MCP tools, persistent session settings, and private-network controls.
+- A Windows build step that embeds the current Tautline application icon.
+
+### Changed
+
+- Removed the previous per-tool widget resources and compatibility cards.
+- Moved the active v2.4.0 source into the clean `cmd/tautline` repository layout.
+- Updated configuration examples to use `TAUTLINE_*` names while retaining required Hermes bridge compatibility variables.
+- Simplified local migration to preserve only configuration, OAuth data, agent state, and dashboard credentials.
+
+### Security
+
+- External connector secrets are resolved only at startup and are not returned by the dashboard or activity monitor.
+- Activity payloads are redacted, bounded, and held only in process memory.
+- Runtime credentials, executables, generated resources, logs, caches, and artifacts remain excluded from Git.
+
 ## [2.1.0] - 2026-07-29
 
 ### Added

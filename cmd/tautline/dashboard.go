@@ -52,6 +52,7 @@ type dashboardState struct {
 	Router       RouterStatus        `json:"router"`
 	Lightpanda   LightpandaStatus    `json:"lightpanda"`
 	Tunnel       TunnelStatus        `json:"tunnel"`
+	MCPServers   []ExternalMCPStatus `json:"mcp_servers"`
 	Slots        []AgentSlot         `json:"slots"`
 	Runs         []AgentRun          `json:"runs"`
 }
@@ -78,12 +79,28 @@ type slotUpdate struct {
 	Caveman     *bool `json:"caveman"`
 }
 
+type externalMCPInput struct {
+	Name             *string            `json:"name"`
+	Prefix           *string            `json:"prefix"`
+	Transport        *string            `json:"transport"`
+	Enabled          *bool              `json:"enabled"`
+	Command          *string            `json:"command"`
+	Args             *[]string          `json:"args"`
+	WorkingDirectory *string            `json:"working_directory"`
+	URL              *string            `json:"url"`
+	Environment      *map[string]string `json:"environment"`
+	Headers          *map[string]string `json:"headers"`
+	TimeoutSeconds   *int               `json:"timeout_seconds"`
+}
+
 func registerDashboardRoutes(mux *http.ServeMux, runtime *applicationRuntime) {
 	mux.HandleFunc("/", runtime.handleDashboard)
 	mux.HandleFunc("/assets/", runtime.handleDashboardAsset)
 	mux.HandleFunc("/api/state", runtime.requireAdmin(runtime.handleDashboardState))
 	mux.HandleFunc("/api/token/reveal", runtime.requireAdminMutation(runtime.handleTokenReveal))
 	mux.HandleFunc("/api/settings", runtime.requireAdminMutation(runtime.handleSettings))
+	mux.HandleFunc("/api/mcp", runtime.requireAdminMutation(runtime.handleMCPCollection))
+	mux.HandleFunc("/api/mcp/", runtime.requireAdminMutation(runtime.handleMCPItem))
 	mux.HandleFunc("/api/agents", runtime.requireAdminMutation(runtime.handleAgentCollection))
 	mux.HandleFunc("/api/agents/", runtime.requireAdminMutation(runtime.handleAgentItem))
 	mux.HandleFunc("/api/runs/", runtime.requireAdminMutation(runtime.handleRunItem))
@@ -234,6 +251,7 @@ func (a *applicationRuntime) dashboardSnapshot() dashboardState {
 		Router:     a.agents.routerStatusSnapshot(),
 		Lightpanda: a.lightpanda.status(),
 		Tunnel:     tunnel,
+		MCPServers: a.mcpClients.statuses(),
 		Slots:      sortedAgentSlots(a.agents.slotsSnapshot()),
 		Runs:       a.agents.runsSnapshot(),
 	}
@@ -312,6 +330,126 @@ func normalizeDomain(value string) string {
 	value = strings.TrimPrefix(value, "https://")
 	value = strings.TrimPrefix(value, "http://")
 	return strings.TrimSuffix(value, "/")
+}
+
+func (a *applicationRuntime) handleMCPCollection(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var input externalMCPInput
+	if err := decodeJSONBody(r, &input); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	config := ExternalMCPConfig{Transport: "stdio", TimeoutSeconds: defaultExternalMCPTimeout}
+	applyExternalMCPInput(&config, input)
+	status, err := a.mcpClients.addConfig(config)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusCreated, status)
+}
+
+func (a *applicationRuntime) handleMCPItem(w http.ResponseWriter, r *http.Request) {
+	remainder := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/mcp/"), "/")
+	parts := strings.Split(remainder, "/")
+	if len(parts) == 0 || parts[0] == "" || len(parts) > 2 {
+		http.NotFound(w, r)
+		return
+	}
+	id := parts[0]
+	if len(parts) == 2 {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var (
+			status ExternalMCPStatus
+			err    error
+		)
+		switch parts[1] {
+		case "connect":
+			status, err = a.mcpClients.setEnabled(r.Context(), id, true)
+		case "disconnect":
+			status, err = a.mcpClients.setEnabled(r.Context(), id, false)
+		default:
+			http.NotFound(w, r)
+			return
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, status)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodDelete:
+		if err := a.mcpClients.removeConfig(id); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"removed": id})
+	case http.MethodPatch, http.MethodPost:
+		config, exists := a.mcpClients.config(id)
+		if !exists {
+			http.NotFound(w, r)
+			return
+		}
+		var input externalMCPInput
+		if err := decodeJSONBody(r, &input); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		applyExternalMCPInput(&config, input)
+		status, err := a.mcpClients.updateConfig(config)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, status)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func applyExternalMCPInput(config *ExternalMCPConfig, input externalMCPInput) {
+	if input.Name != nil {
+		config.Name = strings.TrimSpace(*input.Name)
+	}
+	if input.Prefix != nil {
+		config.Prefix = strings.TrimSpace(*input.Prefix)
+	}
+	if input.Transport != nil {
+		config.Transport = strings.TrimSpace(*input.Transport)
+	}
+	if input.Enabled != nil {
+		config.Enabled = *input.Enabled
+	}
+	if input.Command != nil {
+		config.Command = strings.TrimSpace(*input.Command)
+	}
+	if input.Args != nil {
+		config.Args = append([]string(nil), (*input.Args)...)
+	}
+	if input.WorkingDirectory != nil {
+		config.WorkingDirectory = strings.TrimSpace(*input.WorkingDirectory)
+	}
+	if input.URL != nil {
+		config.URL = strings.TrimSpace(*input.URL)
+	}
+	if input.Environment != nil {
+		config.Environment = cloneStringMap(*input.Environment)
+	}
+	if input.Headers != nil {
+		config.Headers = cloneStringMap(*input.Headers)
+	}
+	if input.TimeoutSeconds != nil {
+		config.TimeoutSeconds = *input.TimeoutSeconds
+	}
 }
 
 func (a *applicationRuntime) handleAgentCollection(w http.ResponseWriter, r *http.Request) {

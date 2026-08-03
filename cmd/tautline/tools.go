@@ -135,8 +135,24 @@ func registerTools(s *server.MCPServer) {
 		mcp.WithIdempotentHintAnnotation(true),
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
-	maybeSetWidgetMeta("open_workspace", &openWorkspaceTool, workspaceWidgetURI, "Opening workspace", "Workspace ready")
+	if activeWidgetMode != widgetModeOff {
+		setWidgetMeta(&openWorkspaceTool, activityWidgetURI, "Opening workspace", "Workspace ready")
+	}
 	s.AddTool(openWorkspaceTool, handleOpenWorkspace)
+
+	activityTool := mcp.NewTool("activity_snapshot",
+		mcp.WithTitleAnnotation("Read Tautline activity"),
+		mcp.WithDescription("Read the current activity timeline for one open workspace. This app-only tool feeds the single Tautline activity widget."),
+		mcp.WithString("workspace_id", mcp.Required(), mcp.Description("Workspace identifier returned by open_workspace")),
+		mcp.WithString("event_id", mcp.Description("Optional event to inspect in detail")),
+		mcp.WithOutputSchema[activitySnapshot](),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(true),
+		mcp.WithOpenWorldHintAnnotation(false),
+	)
+	setAppOnlyToolMeta(&activityTool)
+	s.AddTool(activityTool, handleActivitySnapshot)
 
 	searchTool := mcp.NewTool("search",
 		mcp.WithTitleAnnotation("Search workspace"),
@@ -155,7 +171,6 @@ func registerTools(s *server.MCPServer) {
 		mcp.WithIdempotentHintAnnotation(true),
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
-	maybeSetWidgetMeta("search", &searchTool, toolCardWidgetURI, "Searching workspace", "Search complete")
 	s.AddTool(searchTool, handleWorkspaceSearch)
 
 	readTool := mcp.NewTool("read",
@@ -177,7 +192,6 @@ func registerTools(s *server.MCPServer) {
 		mcp.WithIdempotentHintAnnotation(true),
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
-	maybeSetWidgetMeta("read", &readTool, fileWidgetURI, "Reading file", "File ready")
 	s.AddTool(readTool, handleRead)
 
 	writeTool := mcp.NewTool("write",
@@ -192,7 +206,6 @@ func registerTools(s *server.MCPServer) {
 		mcp.WithIdempotentHintAnnotation(true),
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
-	maybeSetWidgetMeta("write", &writeTool, diffWidgetURI, "Writing file", "File written")
 	s.AddTool(writeTool, handleWrite)
 
 	editTool := mcp.NewTool("edit",
@@ -208,7 +221,6 @@ func registerTools(s *server.MCPServer) {
 		mcp.WithIdempotentHintAnnotation(false),
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
-	maybeSetWidgetMeta("edit", &editTool, diffWidgetURI, "Applying edit", "Edit applied")
 	s.AddTool(editTool, handleEdit)
 
 	bashTool := mcp.NewTool("bash",
@@ -224,7 +236,6 @@ func registerTools(s *server.MCPServer) {
 		mcp.WithIdempotentHintAnnotation(false),
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
-	maybeSetWidgetMeta("bash", &bashTool, commandWidgetURI, "Running command", "Command finished")
 	s.AddTool(bashTool, handleBash)
 
 	artifactTool := mcp.NewTool("artifact_read",
@@ -248,7 +259,6 @@ func registerTools(s *server.MCPServer) {
 		mcp.WithIdempotentHintAnnotation(true),
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
-	maybeSetWidgetMeta("artifact_read", &artifactTool, toolCardWidgetURI, "Reading artifact", "Artifact ready")
 	s.AddTool(artifactTool, handleArtifactRead)
 
 	if activeWidgetMode != widgetModeOff {
@@ -262,34 +272,11 @@ func registerTools(s *server.MCPServer) {
 			mcp.WithIdempotentHintAnnotation(false),
 			mcp.WithOpenWorldHintAnnotation(false),
 		)
-		maybeSetWidgetMeta("show_changes", &showChangesTool, changesWidgetURI, "Preparing review", "Changes ready")
 		s.AddTool(showChangesTool, handleShowChanges)
 	}
 
 	registerSkillTools(s)
 	registerAgentTools(s)
-}
-
-func widgetEnabledForTool(toolName string) bool {
-	if activeWidgetMode == widgetModeFull {
-		return true
-	}
-	if activeWidgetMode != widgetModeChanges {
-		return false
-	}
-	switch toolName {
-	case "open_workspace", "show_changes", "list_subagents", "delegate_task", "get_agent_run", "cancel_agent_run":
-		return true
-	default:
-		return false
-	}
-}
-
-func maybeSetWidgetMeta(toolName string, tool *mcp.Tool, resourceURI, invoking, invoked string) {
-	if !widgetEnabledForTool(toolName) {
-		return
-	}
-	setWidgetMeta(tool, resourceURI, invoking, invoked)
 }
 
 func setWidgetMeta(tool *mcp.Tool, resourceURI, invoking, invoked string) {
@@ -301,28 +288,38 @@ func setWidgetMeta(tool *mcp.Tool, resourceURI, invoking, invoked string) {
 		"openai/outputTemplate":          resourceURI,
 		"openai/toolInvocation/invoking": invoking,
 		"openai/toolInvocation/invoked":  invoked,
-		"openai/widgetAccessible":        false,
+		"openai/widgetAccessible":        true,
 	})
 }
 
-func toolHasWidget(toolName string) bool {
-	return widgetEnabledForTool(toolName)
+func setAppOnlyToolMeta(tool *mcp.Tool) {
+	tool.Meta = mcp.NewMetaFromMap(map[string]any{
+		"ui": map[string]any{
+			"visibility": []string{"app"},
+		},
+		"openai/visibility": "private",
+	})
 }
 
-func newWidgetToolResult(modelContent, widgetContent any, fallback string) *mcp.CallToolResult {
+func newToolResult(toolName string, modelContent, activityContent any, fallback string) *mcp.CallToolResult {
 	result := mcp.NewToolResultStructured(modelContent, fallback)
-	result.Meta = mcp.NewMetaFromMap(map[string]any{
-		"tautline/widgetData": widgetContent,
-		"devspace/widgetData": widgetContent,
-	})
+	if recordActivity(toolName, activityContent, fallback) {
+		result.Meta = mcp.NewMetaFromMap(map[string]any{activityRecordedMeta: true})
+	}
 	return result
 }
 
-func newToolResult(toolName string, modelContent, widgetContent any, fallback string) *mcp.CallToolResult {
-	if toolHasWidget(toolName) {
-		return newWidgetToolResult(modelContent, widgetContent, fallback)
+func handleActivitySnapshot(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	runtime, err := currentApplicationRuntime()
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
 	}
-	return mcp.NewToolResultStructured(modelContent, fallback)
+	workspaceID := argStr(req, "workspace_id")
+	if _, err := getWorkspace(workspaceID); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	snapshot := runtime.activity.snapshot(workspaceID, argStr(req, "event_id"))
+	return mcp.NewToolResultStructured(snapshot, snapshot.Summary), nil
 }
 
 func handleOpenWorkspace(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

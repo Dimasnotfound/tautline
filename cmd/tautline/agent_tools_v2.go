@@ -44,7 +44,6 @@ func registerAgentTools(s *server.MCPServer) {
 		mcp.WithIdempotentHintAnnotation(true),
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
-	maybeSetWidgetMeta("list_subagents", &listTool, toolCardWidgetURI, "Checking sub-agents", "Sub-agents ready")
 	s.AddTool(listTool, handleListSubagents)
 
 	delegateTool := mcp.NewTool("delegate_task",
@@ -67,7 +66,6 @@ func registerAgentTools(s *server.MCPServer) {
 		mcp.WithIdempotentHintAnnotation(false),
 		mcp.WithOpenWorldHintAnnotation(true),
 	)
-	maybeSetWidgetMeta("delegate_task", &delegateTool, toolCardWidgetURI, "Delegating task", "Task delegated")
 	s.AddTool(delegateTool, handleDelegateTask)
 
 	getTool := mcp.NewTool("get_agent_run",
@@ -82,7 +80,6 @@ func registerAgentTools(s *server.MCPServer) {
 		mcp.WithIdempotentHintAnnotation(true),
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
-	maybeSetWidgetMeta("get_agent_run", &getTool, toolCardWidgetURI, "Checking agent", "Agent status ready")
 	s.AddTool(getTool, handleGetAgentRun)
 
 	cancelTool := mcp.NewTool("cancel_agent_run",
@@ -95,7 +92,6 @@ func registerAgentTools(s *server.MCPServer) {
 		mcp.WithIdempotentHintAnnotation(false),
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
-	maybeSetWidgetMeta("cancel_agent_run", &cancelTool, toolCardWidgetURI, "Cancelling agent", "Agent cancelled")
 	s.AddTool(cancelTool, handleCancelAgentRun)
 
 	browserTool := mcp.NewTool("lightpanda_fetch",
@@ -109,7 +105,6 @@ func registerAgentTools(s *server.MCPServer) {
 		mcp.WithIdempotentHintAnnotation(false),
 		mcp.WithOpenWorldHintAnnotation(true),
 	)
-	maybeSetWidgetMeta("lightpanda_fetch", &browserTool, toolCardWidgetURI, "Opening page", "Page rendered")
 	s.AddTool(browserTool, handleLightpandaFetch)
 }
 
