@@ -88,6 +88,7 @@ type activityBootstrapView struct {
 	Kind        string `json:"kind"`
 	Title       string `json:"title"`
 	Summary     string `json:"summary"`
+	MonitorID   string `json:"monitorId"`
 	WorkspaceID string `json:"workspaceId,omitempty"`
 	Path        string `json:"path,omitempty"`
 	Ready       bool   `json:"ready"`
@@ -144,16 +145,16 @@ type commandView struct {
 
 func registerTools(s *server.MCPServer) {
 	activityLauncher := mcp.NewTool("tautline_activity",
-		mcp.WithTitleAnnotation("Show Tautline activity"),
-		mcp.WithDescription("Automatically mount the single Tautline activity widget at the beginning of a MyLocal interaction. Call this exactly once before other Tautline tools when the current conversation does not already contain the widget. It restores the active workspace automatically and performs no file changes."),
+		mcp.WithTitleAnnotation("Start prompt activity"),
+		mcp.WithDescription("Mount one new prompt-scoped Tautline activity widget. Call this exactly once at the beginning of every user turn that uses Tautline, before any other Tautline tool, even when older widgets already exist. Never call it more than once in the same user turn. Starting a new prompt monitor archives the previous monitor and performs no file changes."),
 		mcp.WithOutputSchema[activityBootstrapView](),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithDestructiveHintAnnotation(false),
-		mcp.WithIdempotentHintAnnotation(true),
+		mcp.WithIdempotentHintAnnotation(false),
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
 	if activeWidgetMode != widgetModeOff {
-		setWidgetMeta(&activityLauncher, activityWidgetURI, "Opening Tautline activity", "Tautline activity ready")
+		setWidgetMeta(&activityLauncher, activityWidgetURI, "Opening prompt activity", "Prompt activity ready")
 	}
 	s.AddTool(activityLauncher, handleTautlineActivity)
 
@@ -182,9 +183,9 @@ func registerTools(s *server.MCPServer) {
 	s.AddTool(workspaceLookupTool, handleWorkspaceLookup)
 
 	activityTool := mcp.NewTool("activity_snapshot",
-		mcp.WithTitleAnnotation("Read Tautline activity"),
-		mcp.WithDescription("Read the current activity timeline for the active workspace. The app may omit workspace_id to restore the most recently active persisted workspace automatically."),
-		mcp.WithString("workspace_id", mcp.Description("Optional workspace identifier; omitted means the active persisted workspace")),
+		mcp.WithTitleAnnotation("Read prompt activity"),
+		mcp.WithDescription("Read the immutable activity timeline assigned to one prompt-scoped monitor. An archived monitor never receives events from later prompts or other conversations."),
+		mcp.WithString("monitor_id", mcp.Required(), mcp.Description("Prompt monitor identifier returned by tautline_activity")),
 		mcp.WithString("event_id", mcp.Description("Optional event to inspect in detail")),
 		mcp.WithOutputSchema[activitySnapshot](),
 		mcp.WithReadOnlyHintAnnotation(true),
@@ -351,18 +352,23 @@ func newToolResult(toolName string, modelContent, activityContent any, fallback 
 }
 
 func handleTautlineActivity(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	runtime, err := currentApplicationRuntime()
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
 	view := activityBootstrapView{
 		Kind:    "activity_bootstrap",
-		Title:   "Tautline activity",
-		Summary: "Activity monitor ready. Open a workspace to begin tracking local work.",
+		Title:   "Tautline prompt activity",
+		Summary: "A new activity monitor was created for this prompt. Open a workspace to begin tracking local work.",
 		Ready:   false,
 	}
 	if state, found := defaultWorkspace(); found {
-		view.Summary = "Activity monitor restored for " + filepath.Base(state.Root) + "."
+		view.Summary = "A new prompt activity monitor was created for " + filepath.Base(state.Root) + "."
 		view.WorkspaceID = state.ID
 		view.Path = state.Root
 		view.Ready = true
 	}
+	view.MonitorID = runtime.activity.startMonitor(view.WorkspaceID)
 	return mcp.NewToolResultStructured(view, view.Summary), nil
 }
 
@@ -371,15 +377,14 @@ func handleActivitySnapshot(_ context.Context, req mcp.CallToolRequest) (*mcp.Ca
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	workspaceID := strings.TrimSpace(argStr(req, "workspace_id"))
-	if workspaceID != "" {
-		if _, found := activateWorkspace(workspaceID); !found {
-			return mcp.NewToolResultError(fmt.Sprintf("unknown workspace_id %q; call open_workspace first", workspaceID)), nil
-		}
-	} else if state, found := defaultWorkspace(); found {
-		workspaceID = state.ID
+	monitorID := strings.TrimSpace(argStr(req, "monitor_id"))
+	if monitorID == "" {
+		return mcp.NewToolResultError("monitor_id is required; mount a new prompt widget with tautline_activity"), nil
 	}
-	snapshot := runtime.activity.snapshot(workspaceID, argStr(req, "event_id"))
+	snapshot, found := runtime.activity.snapshotMonitor(monitorID, argStr(req, "event_id"))
+	if !found {
+		return mcp.NewToolResultError(fmt.Sprintf("unknown monitor_id %q; mount a new prompt widget with tautline_activity", monitorID)), nil
+	}
 	return mcp.NewToolResultStructured(snapshot, snapshot.Summary), nil
 }
 
@@ -441,14 +446,17 @@ func handleWorkspaceLookup(_ context.Context, req mcp.CallToolRequest) (*mcp.Cal
 	view := workspaceLookupView{
 		Kind:    "workspace_lookup",
 		Title:   "Workspace not open",
-		Summary: "Call open_workspace once to register this project. The existing Tautline activity widget will detect it automatically.",
+		Summary: "Call open_workspace once to register this project. The current prompt monitor will bind to it automatically.",
 		Path:    rp,
 		Found:   found,
 	}
 	if found {
 		_, _ = activateWorkspace(state.ID)
+		if runtime, err := currentApplicationRuntime(); err == nil && runtime.activity != nil {
+			runtime.activity.bindWorkspace(state.ID)
+		}
 		view.Title = "Workspace ready"
-		view.Summary = "Reuse the existing workspace_id; the activity widget now follows this workspace."
+		view.Summary = "Reuse the existing workspace_id; this prompt monitor now follows the workspace."
 		view.WorkspaceID = state.ID
 	}
 	return mcp.NewToolResultStructured(view, view.Summary), nil

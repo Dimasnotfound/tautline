@@ -11,8 +11,18 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
+func mustActivitySnapshot(t *testing.T, store *activityStore, monitorID, eventID string) activitySnapshot {
+	t.Helper()
+	snapshot, found := store.snapshotMonitor(monitorID, eventID)
+	if !found {
+		t.Fatalf("monitor %q was not found", monitorID)
+	}
+	return snapshot
+}
+
 func TestActivityMiddlewareRecordsBuiltInAndDynamicTools(t *testing.T) {
 	store := newActivityStore()
+	monitorID := store.startMonitor("")
 	middleware := activityMiddleware(store)
 	handler := middleware(func(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		if request.Params.Name == "remote_fail" {
@@ -28,7 +38,7 @@ func TestActivityMiddlewareRecordsBuiltInAndDynamicTools(t *testing.T) {
 	if _, err := handler(context.Background(), toolRequest("remote_fail", map[string]any{})); err == nil {
 		t.Fatal("protocol error was not returned")
 	}
-	snapshot := store.snapshot("ws_unused", "")
+	snapshot := mustActivitySnapshot(t, store, monitorID, "")
 	if len(snapshot.Events) != 2 {
 		t.Fatalf("middleware recorded %d events, want 2", len(snapshot.Events))
 	}
@@ -42,6 +52,7 @@ func TestActivityMiddlewareRecordsBuiltInAndDynamicTools(t *testing.T) {
 
 func TestActivityMiddlewareRemovesInternalMarker(t *testing.T) {
 	store := newActivityStore()
+	monitorID := store.startMonitor("")
 	result := mcp.NewToolResultText("already recorded")
 	result.Meta = mcp.NewMetaFromMap(map[string]any{activityRecordedMeta: true})
 	handler := activityMiddleware(store)(func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -51,8 +62,8 @@ func TestActivityMiddlewareRemovesInternalMarker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if returned.Meta != nil || len(store.events) != 0 {
-		t.Fatalf("internal marker leaked or event was duplicated: meta=%+v events=%+v", returned.Meta, store.events)
+	if returned.Meta != nil || len(mustActivitySnapshot(t, store, monitorID, "").Events) != 0 {
+		t.Fatalf("internal marker leaked or event was duplicated: meta=%+v", returned.Meta)
 	}
 }
 
@@ -66,13 +77,17 @@ func TestActivityMiddlewareSkipsInternalMonitorTools(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if len(store.events) != 0 {
-		t.Fatalf("internal monitor tools created recursive or noisy activity: %+v", store.events)
+	store.mu.RLock()
+	monitorCount := len(store.monitors)
+	store.mu.RUnlock()
+	if monitorCount != 0 {
+		t.Fatalf("internal monitor tools created recursive or noisy monitors: %d", monitorCount)
 	}
 }
 
-func TestActivityStoreFiltersWorkspaceAndKeepsGlobalEvents(t *testing.T) {
+func TestActivityStoreIsolatesPromptMonitors(t *testing.T) {
 	store := newActivityStore()
+	firstID := store.startMonitor("ws_alpha")
 	store.record("skills_search", map[string]any{
 		"kind":    "skills_search",
 		"title":   "Skills matched",
@@ -83,8 +98,9 @@ func TestActivityStoreFiltersWorkspaceAndKeepsGlobalEvents(t *testing.T) {
 		"workspaceId": "ws_alpha",
 		"path":        "alpha.go",
 		"summary":     "alpha updated",
-		"stats":       map[string]any{"added": 2, "removed": 1},
 	}, "alpha", false)
+
+	secondID := store.startMonitor("ws_beta")
 	store.record("write", map[string]any{
 		"kind":        "write",
 		"workspaceId": "ws_beta",
@@ -92,25 +108,33 @@ func TestActivityStoreFiltersWorkspaceAndKeepsGlobalEvents(t *testing.T) {
 		"summary":     "beta updated",
 	}, "beta", false)
 
-	snapshot := store.snapshot("ws_alpha", "")
-	if len(snapshot.Events) != 2 {
-		t.Fatalf("workspace snapshot has %d events, want 2: %+v", len(snapshot.Events), snapshot.Events)
+	first := mustActivitySnapshot(t, store, firstID, "")
+	second := mustActivitySnapshot(t, store, secondID, "")
+	if first.Active || !second.Active {
+		t.Fatalf("unexpected monitor activity state: first=%t second=%t", first.Active, second.Active)
 	}
-	if snapshot.Events[0].Path != "alpha.go" || snapshot.Events[1].Kind != "skills_search" {
-		t.Fatalf("unexpected event order or filtering: %+v", snapshot.Events)
+	if first.MonitorID != firstID || len(first.Events) != 2 || first.Events[0].Path != "alpha.go" {
+		t.Fatalf("first prompt monitor changed or mixed events: %+v", first)
 	}
-	if snapshot.Selected == nil || snapshot.Selected.ID != snapshot.Events[0].ID {
-		t.Fatalf("latest event was not selected: %+v", snapshot.Selected)
+	if second.MonitorID != secondID || len(second.Events) != 1 || second.Events[0].Path != "beta.go" {
+		t.Fatalf("second prompt monitor is incomplete: %+v", second)
+	}
+
+	store.record("read", map[string]any{"kind": "file", "workspaceId": "ws_beta", "path": "later.go"}, "later", false)
+	archived := mustActivitySnapshot(t, store, firstID, "")
+	if archived.Sequence != first.Sequence || len(archived.Events) != len(first.Events) {
+		t.Fatalf("archived prompt monitor received later activity: before=%+v after=%+v", first, archived)
 	}
 }
 
 func TestActivityStoreCanInspectOlderEvent(t *testing.T) {
 	store := newActivityStore()
+	monitorID := store.startMonitor("ws_one")
 	store.record("read", map[string]any{"kind": "file", "workspaceId": "ws_one", "path": "one.go", "content": "one"}, "one", false)
 	store.record("read", map[string]any{"kind": "file", "workspaceId": "ws_one", "path": "two.go", "content": "two"}, "two", false)
-	latest := store.snapshot("ws_one", "")
+	latest := mustActivitySnapshot(t, store, monitorID, "")
 	olderID := latest.Events[1].ID
-	selected := store.snapshot("ws_one", olderID)
+	selected := mustActivitySnapshot(t, store, monitorID, olderID)
 	if selected.Selected == nil || selected.Selected.ID != olderID {
 		t.Fatalf("event %s was not selected: %+v", olderID, selected.Selected)
 	}
@@ -139,15 +163,17 @@ func TestActivityPayloadIsRedactedAndBounded(t *testing.T) {
 	}
 }
 
-func TestActivityStoreKeepsOnlyRecentEvents(t *testing.T) {
+func TestActivityStoreKeepsOnlyRecentEventsPerMonitor(t *testing.T) {
 	store := newActivityStore()
+	monitorID := store.startMonitor("ws_limit")
 	for index := 0; index < activityLimit+12; index++ {
 		store.record("read", map[string]any{"kind": "file", "workspaceId": "ws_limit", "path": index}, "read", false)
 	}
 	store.mu.RLock()
-	count := len(store.events)
-	firstSequence := store.events[0].Sequence
-	lastSequence := store.events[len(store.events)-1].Sequence
+	monitor := store.monitors[monitorID]
+	count := len(monitor.Events)
+	firstSequence := monitor.Events[0].Sequence
+	lastSequence := monitor.Events[len(monitor.Events)-1].Sequence
 	store.mu.RUnlock()
 	if count != activityLimit || firstSequence != 13 || lastSequence != activityLimit+12 {
 		t.Fatalf("ring buffer count=%d first=%d last=%d", count, firstSequence, lastSequence)
@@ -156,9 +182,10 @@ func TestActivityStoreKeepsOnlyRecentEvents(t *testing.T) {
 
 func TestActivitySnapshotJSONCarriesOneDetailedPayload(t *testing.T) {
 	store := newActivityStore()
+	monitorID := store.startMonitor("ws_json")
 	store.record("read", map[string]any{"kind": "file", "workspaceId": "ws_json", "path": "one.go", "content": "one"}, "one", false)
 	store.record("read", map[string]any{"kind": "file", "workspaceId": "ws_json", "path": "two.go", "content": "two"}, "two", false)
-	encoded, err := json.Marshal(store.snapshot("ws_json", ""))
+	encoded, err := json.Marshal(mustActivitySnapshot(t, store, monitorID, ""))
 	if err != nil {
 		t.Fatal(err)
 	}

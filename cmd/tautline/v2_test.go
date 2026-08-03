@@ -552,7 +552,7 @@ func TestWidgetResourceCanBeListedAndFetchedThroughMCPHTTP(t *testing.T) {
 	if readResponse.StatusCode != http.StatusOK {
 		t.Fatalf("resources/read returned %d: %s", readResponse.StatusCode, readBody)
 	}
-	for _, marker := range []string{activityWidgetURI, widgetMIMEType, "Tautline activity", "activity_snapshot", "tools/call"} {
+	for _, marker := range []string{activityWidgetURI, widgetMIMEType, "Tautline activity", "activity_snapshot", "monitor_id", "Latest", "tools/call"} {
 		if !bytes.Contains(readBody, []byte(marker)) {
 			t.Fatalf("fetched template is missing %q: %s", marker, readBody)
 		}

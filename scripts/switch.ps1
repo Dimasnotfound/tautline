@@ -8,7 +8,7 @@ $Root = Split-Path -Parent $PSScriptRoot
 $Binary = Join-Path $Root "bin\tautline.exe"
 $StartScript = Join-Path $PSScriptRoot "start.ps1"
 $EnvPath = Join-Path $Root ".env"
-$ExpectedVersion = "2.5.1"
+$ExpectedVersion = "2.5.2"
 
 if (-not (Test-Path $Binary)) {
     throw "The new Tautline executable was not found at $Binary. Run scripts\build.ps1 first."

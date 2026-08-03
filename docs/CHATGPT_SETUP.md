@@ -1,4 +1,4 @@
-# Connect Tautline v2.5.1 to ChatGPT
+# Connect Tautline v2.5.2 to ChatGPT
 
 Tautline listens on `127.0.0.1:7688` by default. ChatGPT requires a stable HTTPS origin that forwards to the local MCP endpoint.
 
@@ -65,17 +65,17 @@ Complete the owner authorization flow with the private token stored in `.env` or
 
 ## 5. Verify the activity monitor
 
-After reconnecting the plugin, send a MyLocal request. The server instructions make ChatGPT call `tautline_activity` once as the first Tautline tool, which renders:
+After reconnecting the plugin, send a MyLocal request. At the beginning of every user turn that uses Tautline, the server instructions make ChatGPT call `tautline_activity` exactly once before other Tautline tools. The call renders:
 
 ```text
-ui://tautline/activity-v3.html
+ui://tautline/activity-v4.html
 ```
 
-Starting the local executable alone cannot open an iframe because widget rendering is initiated by a ChatGPT tool call. Once mounted, the widget restores the active persisted workspace automatically. Use `workspace_lookup` before `open_workspace`; both tools and all later workspace, command, browser, skill, agent, and external-MCP calls remain data-only.
+Starting the local executable alone cannot open an iframe because widget rendering is initiated by a ChatGPT tool call. Each rendered widget receives a unique prompt `monitor_id`. When the next prompt begins, the previous widget becomes archived and stops automatic polling, so it cannot show activity from later prompts. Use `workspace_lookup` before `open_workspace`; both tools and all later workspace, command, browser, skill, agent, and external-MCP calls remain data-only. Use the widget's **Latest** button to return from an older selected event to live tracking.
 
 ## 6. Google Docs integration
 
-Tautline v2.5.1 can connect to Google's official Docs MCP endpoint. Register this OAuth redirect URI in the Google Cloud OAuth client:
+Tautline v2.5.2 can connect to Google's official Docs MCP endpoint. Register this OAuth redirect URI in the Google Cloud OAuth client:
 
 ```text
 http://127.0.0.1:8765/oauth/callback
@@ -91,7 +91,7 @@ The resulting token is stored under `runtime/v2/oauth/` and is excluded by `.git
 
 ## Troubleshooting
 
-- Confirm `healthz` reports service `Tautline` and version `2.5.1`.
+- Confirm `healthz` reports service `Tautline` and version `2.5.2`.
 - Confirm the tunnel forwards to port `7688`.
 - Confirm the public base URL and widget domain contain only the HTTPS origin.
 - Confirm `.env`, owner tokens, OAuth tokens, runtime state, and executables remain untracked.

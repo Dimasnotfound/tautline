@@ -1,14 +1,14 @@
 # Context-safe coding workflow
 
-Tautline v2.5.1 uses one live activity monitor, bounded tool results, and a dedicated first-use launcher that prevents duplicate widget cards. The recommended workflow keeps repository context local and sends only the information needed for the current task.
+Tautline v2.5.2 uses one new prompt-scoped activity monitor per user turn, bounded tool results, and a dedicated launcher that isolates older widgets from later activity. The recommended workflow keeps repository context local and sends only the information needed for the current task.
 
-## 1. Activate the monitor once
+## 1. Start one monitor per user turn
 
-At the first MyLocal or Tautline interaction in a conversation, call `tautline_activity` exactly once. It is the only tool that owns widget output metadata. Skip it when the conversation already contains the Tautline activity widget.
+At the beginning of every user turn that uses MyLocal or Tautline, call `tautline_activity` exactly once before any other Tautline tool. Call it even when the conversation already contains older Tautline widgets, but never call it more than once in the same user turn. The call creates a unique prompt monitor and archives the monitor from the previous prompt.
 
 ## 2. Reuse or open one workspace
 
-When a project may already be open, call `workspace_lookup` first. Reuse its `workspace_id` when found. Call `open_workspace` only once when lookup reports that the project is not open, then reuse that `workspace_id` for every later filesystem and command operation. Both tools are data-only; the existing monitor follows the active workspace automatically.
+When a project may already be open, call `workspace_lookup` first. Reuse its `workspace_id` when found. Call `open_workspace` only once when lookup reports that the project is not open, then reuse that `workspace_id` for every later filesystem and command operation. Both tools are data-only, and the current prompt monitor binds to the selected workspace automatically.
 
 ## 3. Search before reading
 
@@ -42,4 +42,6 @@ After the final file modification, call `show_changes` exactly once. Use the res
 
 ## Activity monitor behavior
 
-`tautline_activity` is the only render tool. `open_workspace`, `workspace_lookup`, `activity_snapshot`, and every workspace, command, skill, agent, browser, or external-MCP action are data-only. The widget polls `activity_snapshot` without a required `workspace_id`, restores the active persisted workspace, and follows later workspace changes without remounting its iframe. The monitor updates its static shell incrementally, keeps the timeline and preview independently scrollable, and reuses cached details for faster repeat selection.
+`tautline_activity` is the only render tool. Each call returns a unique `monitor_id` for one user prompt. The widget sends that identifier to the app-only `activity_snapshot` tool on every poll, preventing an older widget from reading another prompt's activity. When the next prompt starts, the previous monitor becomes archived and its widget stops polling automatically. Archived timelines remain inspectable.
+
+Selecting an older event pins the inspector to that event while new activity continues to arrive in the active prompt monitor. The **Latest** button clears the pinned selection, scrolls the timeline to the newest event, and resumes automatic tracking. `open_workspace`, `workspace_lookup`, and every workspace, command, skill, agent, browser, or external-MCP action remain data-only.

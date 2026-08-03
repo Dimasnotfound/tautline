@@ -105,6 +105,9 @@ button { font: inherit; color: inherit; }
 .kind-badge { flex: 0 0 auto; max-width: 100px; overflow: hidden; padding: 3px 6px; border: 1px solid color-mix(in srgb, var(--event-accent) 45%, var(--line)); border-radius: 999px; background: color-mix(in srgb, var(--event-accent) 9%, transparent); color: var(--event-accent); font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); font-size: 8px; font-weight: 700; letter-spacing: .05em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
 .inspector-title { min-width: 0; flex: 1 1 auto; margin: 0; overflow: hidden; font-size: 14px; font-weight: 680; letter-spacing: -.02em; text-overflow: ellipsis; white-space: nowrap; }
 .inspector-time { flex: 0 0 auto; color: var(--faint); font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); font-size: 9px; white-space: nowrap; }
+.latest { flex: 0 0 auto; padding: 4px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); color: var(--muted); cursor: pointer; font-size: 9px; font-weight: 650; }
+.latest:hover:not(:disabled), .latest:focus-visible { border-color: var(--event-accent); color: var(--event-accent); }
+.latest:disabled { cursor: default; opacity: .48; }
 .inspector-summary { margin: 6px 0 0; overflow: hidden; color: var(--muted); font-size: 11px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
 .detail-scroll { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-gutter: stable; background: var(--surface); }
 .rows { display: grid; }
@@ -155,7 +158,7 @@ button { font: inherit; color: inherit; }
     <aside class="timeline" data-role="timeline" aria-label="Tautline activity timeline"><div class="timeline-list" id="timeline-list"><div class="empty">No activity recorded yet.</div></div></aside>
     <article class="inspector" data-role="inspector" id="inspector">
       <header class="inspector-head" id="inspector-head">
-        <div class="inspector-topline"><span class="kind-badge" id="kind-badge">Ready</span><h2 class="inspector-title" id="inspector-title">Waiting for activity</h2><time class="inspector-time" id="inspector-time"></time></div>
+        <div class="inspector-topline"><span class="kind-badge" id="kind-badge">Ready</span><h2 class="inspector-title" id="inspector-title">Waiting for activity</h2><button class="latest" id="latest" type="button" disabled>Latest</button><time class="inspector-time" id="inspector-time"></time></div>
         <p class="inspector-summary" id="inspector-summary">Tautline will show the latest workspace action here.</p>
       </header>
       <div class="detail-scroll" id="detail"><div class="empty">Waiting for the first Tautline action.</div></div>
@@ -177,13 +180,17 @@ const inspectorTitle = document.getElementById("inspector-title");
 const inspectorSummary = document.getElementById("inspector-summary");
 const inspectorTime = document.getElementById("inspector-time");
 const kindBadge = document.getElementById("kind-badge");
+const latestButton = document.getElementById("latest");
 const pending = new Map();
 const detailCache = new Map();
+const restoredState = window.openai && window.openai.widgetState && typeof window.openai.widgetState === "object" ? window.openai.widgetState : {};
 let requestID = 0;
+let monitorID = String(restoredState.monitorId || "");
+let monitorActive = true;
 let workspaceID = "";
 let workspacePath = "";
-let selectedID = "";
-let pinned = false;
+let selectedID = String(restoredState.selectedId || "");
+let pinned = Boolean(restoredState.pinned);
 let snapshot = null;
 let polling = false;
 let queuedRefresh = false;
@@ -253,15 +260,29 @@ function extractResult(payload) {
   }
   return envelope.structuredContent || payload.toolOutput || (typeof envelope.kind === "string" ? envelope : null);
 }
+function persistState() {
+  try {
+    if (window.openai && typeof window.openai.setWidgetState === "function") window.openai.setWidgetState({ monitorId: monitorID, selectedId: selectedID, pinned });
+  } catch (_) {}
+}
 function initialWorkspace(payload) {
   try {
     const data = extractResult(payload);
     if (!data || typeof data !== "object") return;
+    if (data.kind !== "activity_bootstrap" && data.kind !== "activity_snapshot") return;
+    const incomingMonitor = String(data.monitorId || data.monitor_id || "");
+    if (incomingMonitor && monitorID && incomingMonitor !== monitorID) return;
+    if (incomingMonitor) monitorID = incomingMonitor;
     const id = data.workspaceId || data.workspace_id;
     if (id) workspaceID = String(id);
     workspacePath = String(data.path || data.workspacePath || workspacePath || "");
+    if (data.kind === "activity_snapshot") {
+      applySnapshot(data);
+      return;
+    }
+    persistState();
     renderIdentity();
-    refresh(true);
+    if (monitorID) refresh(true);
   } catch (error) {
     renderFailure(error);
   }
@@ -293,10 +314,10 @@ function reportSize() {
 }
 function schedule() {
   clearTimeout(pollTimer);
-  if (!document.hidden) pollTimer = setTimeout(() => refresh(false), pollDelay);
+  if (monitorActive && monitorID && !document.hidden) pollTimer = setTimeout(() => refresh(false), pollDelay);
 }
 async function refresh(force, eventID) {
-  if (document.hidden && !force) return;
+  if (!monitorID || !force && (!monitorActive || document.hidden)) return;
   if (polling) {
     queuedRefresh = queuedRefresh || force;
     return;
@@ -304,7 +325,7 @@ async function refresh(force, eventID) {
   polling = true;
   updateLive(true);
   try {
-    const args = {};
+    const args = { monitor_id: monitorID };
     const requestedID = String(eventID || (pinned && selectedID ? selectedID : ""));
     if (requestedID) args.event_id = requestedID;
     const next = await callTool("activity_snapshot", args);
@@ -314,15 +335,20 @@ async function refresh(force, eventID) {
     updateLive(false);
   } finally {
     polling = false;
-    if (queuedRefresh) {
+    if (queuedRefresh && monitorActive) {
       queuedRefresh = false;
       setTimeout(() => refresh(true), 0);
     } else {
+      queuedRefresh = false;
       schedule();
     }
   }
 }
 function applySnapshot(next) {
+  const incomingMonitor = String(next.monitorId || next.monitor_id || "");
+  if (incomingMonitor && monitorID && incomingMonitor !== monitorID) return;
+  if (incomingMonitor) monitorID = incomingMonitor;
+  monitorActive = next.active !== false;
   const sequence = num(next.sequence);
   pollDelay = sequence === lastSequence ? Math.min(5000, pollDelay + 500) : 1400;
   lastSequence = sequence;
@@ -334,10 +360,12 @@ function applySnapshot(next) {
     trimDetailCache();
   }
   if (!pinned) selectedID = next.selected && next.selected.id || next.events && next.events[0] && next.events[0].id || "";
+  persistState();
   renderIdentity();
   renderSummary();
   renderTimeline(false);
   renderInspector();
+  updateLatestButton();
   updateLive(true);
   reportSize();
 }
@@ -347,9 +375,14 @@ function trimDetailCache() {
 function updateLive(online) {
   const node = document.getElementById("live");
   if (!node) return;
-  node.classList.toggle("offline", !online);
+  const archived = !monitorActive;
+  node.classList.toggle("offline", archived || !online);
   const label = node.querySelector("span:last-child");
-  if (label) label.textContent = online ? "Live" : "Retrying";
+  if (label) label.textContent = archived ? "Archived" : online ? "Live" : "Retrying";
+}
+function updateLatestButton() {
+  latestButton.disabled = !pinned;
+  latestButton.title = pinned ? "Follow the latest activity" : "Already following the latest activity";
 }
 function renderIdentity() {
   const hasWorkspace = Boolean(workspaceID || workspacePath);
@@ -380,7 +413,7 @@ function renderTimeline(force) {
   if (force || signature !== lastTimelineSignature) {
     const scrollTop = timeline.scrollTop;
     timelineList.innerHTML = eventRows(events);
-    timeline.scrollTop = scrollTop;
+    timeline.scrollTop = pinned ? scrollTop : 0;
     lastTimelineSignature = signature;
   }
   updateActiveEvent();
@@ -464,14 +497,28 @@ function handleTimelineClick(event) {
   const button = event.target.closest("[data-event]");
   if (!button || !timelineList.contains(button)) return;
   const id = String(button.dataset.event || "");
-  if (!id || id === selectedID && detailCache.has(id)) return;
+  if (!id) return;
   selectedID = id;
   pinned = true;
+  persistState();
+  updateLatestButton();
   updateActiveEvent();
   renderInspector();
-  refresh(true, id);
+  if (!detailCache.has(id)) refresh(true, id);
+}
+function followLatest() {
+  pinned = false;
+  const events = Array.isArray(snapshot && snapshot.events) ? snapshot.events : [];
+  selectedID = events[0] && events[0].id || "";
+  lastDetailSignature = "";
+  persistState();
+  updateLatestButton();
+  updateActiveEvent();
+  renderInspector();
+  refresh(true);
 }
 timeline.addEventListener("click", handleTimelineClick);
+latestButton.addEventListener("click", followLatest);
 function renderFailure(error) {
   const message = error && error.message ? error.message : String(error || "Unknown activity error");
   setInspectorTheme("error");
@@ -500,14 +547,20 @@ window.addEventListener("message", event => {
 }, { passive: true });
 window.addEventListener("openai:set_globals", event => {
   const globals = event.detail && event.detail.globals;
-  if (globals) initialWorkspace(globals.toolResponseMetadata || globals.toolOutput);
+  if (!globals) return;
+  initialWorkspace(globals.toolOutput);
+  initialWorkspace(globals.toolResponseMetadata);
 }, { passive: true });
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) clearTimeout(pollTimer);
-  else refresh(true);
+  else if (monitorActive) refresh(true);
 });
-if (window.openai) initialWorkspace(window.openai.toolResponseMetadata || window.openai.toolOutput);
-setTimeout(() => { if (!snapshot) refresh(true); }, 0);
+if (window.openai) {
+  initialWorkspace(window.openai.toolOutput);
+  initialWorkspace(window.openai.toolResponseMetadata);
+}
+setTimeout(() => { if (!snapshot && monitorID) refresh(true); }, 0);
+updateLatestButton();
 if (typeof ResizeObserver === "function") new ResizeObserver(reportSize).observe(app);
 reportSize();
 </script>

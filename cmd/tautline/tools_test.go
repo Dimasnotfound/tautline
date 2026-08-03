@@ -106,7 +106,7 @@ func TestLanguageFromPath(t *testing.T) {
 
 func TestActivityWidgetIsSingleAndLightweight(t *testing.T) {
 	html := activityWidgetHTML()
-	if len(html) > 32*1024 {
+	if len(html) > 36*1024 {
 		t.Fatalf("activity widget is too large: %d bytes", len(html))
 	}
 	if strings.Contains(html, "app.innerHTML =") {
@@ -179,12 +179,11 @@ func TestActivityWidgetUsesRenderedContentHeight(t *testing.T) {
 	}
 }
 
-func TestActivityWidgetV25LayoutAndInteractionContract(t *testing.T) {
+func TestActivityWidgetV252LayoutAndInteractionContract(t *testing.T) {
 	html := activityWidgetHTML()
 
 	for _, forbidden := range []string{
 		"No review selected",
-		"id=\"latest\"",
 		"id=\"refresh\"",
 		"class=\"controls\"",
 		"class=\"facts\"",
@@ -206,12 +205,22 @@ func TestActivityWidgetV25LayoutAndInteractionContract(t *testing.T) {
 		"detailCache",
 		"lastDetailSignature",
 		"if (next.workspaceId) workspaceID = String(next.workspaceId)",
-		"setTimeout(() => { if (!snapshot) refresh(true); }, 0)",
+		"const args = { monitor_id: monitorID }",
+		"incomingMonitor !== monitorID",
+		"data.kind !== \"activity_bootstrap\"",
+		"monitorActive = next.active !== false",
+		"archived ? \"Archived\"",
+		"timeline.scrollTop = pinned ? scrollTop : 0",
+		"id=\"latest\"",
+		"function followLatest",
+		"window.openai.setWidgetState",
+		"setTimeout(() => { if (!snapshot && monitorID) refresh(true); }, 0)",
 		"Waiting for an active workspace",
 		"addEventListener(\"click\", handleTimelineClick)",
+		"latestButton.addEventListener(\"click\", followLatest)",
 	} {
 		if !strings.Contains(html, required) {
-			t.Fatalf("v2.5 widget contract is missing %q", required)
+			t.Fatalf("v2.5.2 widget contract is missing %q", required)
 		}
 	}
 
@@ -222,12 +231,12 @@ func TestActivityWidgetV25LayoutAndInteractionContract(t *testing.T) {
 	}
 }
 
-func TestV251VersionAndWidgetRevision(t *testing.T) {
-	if appVersion != "2.5.1" {
-		t.Fatalf("appVersion=%q, want 2.5.1", appVersion)
+func TestV252VersionAndWidgetRevision(t *testing.T) {
+	if appVersion != "2.5.2" {
+		t.Fatalf("appVersion=%q, want 2.5.2", appVersion)
 	}
-	if activityWidgetURI != "ui://tautline/activity-v3.html" {
-		t.Fatalf("activityWidgetURI=%q, want the v3 widget resource", activityWidgetURI)
+	if activityWidgetURI != "ui://tautline/activity-v4.html" {
+		t.Fatalf("activityWidgetURI=%q, want the v4 widget resource", activityWidgetURI)
 	}
 }
 
@@ -375,7 +384,7 @@ func TestSkillCacheKeyTracksSnapshot(t *testing.T) {
 
 func TestWorkflowInstructionsRequireSkillMatching(t *testing.T) {
 	instructions := codingWorkflowInstructions()
-	for _, expected := range []string{"tautline_activity", "automatically mounts the single activity widget", "skills_search", "skill_view", "Before every non-trivial task", "never expose secret configuration values", "workspace_lookup", "prevent duplicate widget cards"} {
+	for _, expected := range []string{"tautline_activity", "beginning of every user turn", "never call it more than once in the same user turn", "prompt-scoped activity widget", "archives the monitor from the previous prompt", "skills_search", "skill_view", "Before every non-trivial task", "never expose secret configuration values", "workspace_lookup", "prevent duplicate workspace registration"} {
 		if !strings.Contains(instructions, expected) {
 			t.Fatalf("workflow instructions are missing %q", expected)
 		}
@@ -516,7 +525,7 @@ func TestOnlyTautlineActivityOwnsWidgetMetadata(t *testing.T) {
 		t.Fatal("tautline_activity tool is missing")
 	}
 	encodedLauncher, _ := json.Marshal(launcher.Tool)
-	for _, marker := range []string{activityWidgetURI, "openai/widgetAccessible", "resourceUri", "automatically"} {
+	for _, marker := range []string{activityWidgetURI, "openai/widgetAccessible", "resourceUri", "prompt-scoped", "same user turn"} {
 		if !strings.Contains(string(encodedLauncher), marker) {
 			t.Fatalf("tautline_activity metadata is missing %q: %s", marker, encodedLauncher)
 		}
@@ -537,8 +546,11 @@ func TestOnlyTautlineActivityOwnsWidgetMetadata(t *testing.T) {
 	if !strings.Contains(string(encodedActivity), "private") || !strings.Contains(string(encodedActivity), "app") || strings.Contains(string(encodedActivity), "outputTemplate") {
 		t.Fatalf("activity_snapshot is not app-only: %s", encodedActivity)
 	}
-	if strings.Contains(string(encodedActivity), `"required":["workspace_id"]`) {
-		t.Fatalf("activity_snapshot still requires workspace_id: %s", encodedActivity)
+	if !strings.Contains(string(encodedActivity), `"required":["monitor_id"]`) {
+		t.Fatalf("activity_snapshot does not require monitor_id: %s", encodedActivity)
+	}
+	if strings.Contains(string(encodedActivity), `workspace_id`) {
+		t.Fatalf("activity_snapshot still exposes workspace_id: %s", encodedActivity)
 	}
 
 	result := newToolResult("delegate_task", map[string]string{"kind": "agent_run"}, map[string]string{"kind": "agent_run"}, "delegated")
@@ -551,7 +563,7 @@ func TestOnlyTautlineActivityOwnsWidgetMetadata(t *testing.T) {
 	}
 }
 
-func TestOpenWorkspaceRejectsDuplicateWidgetMount(t *testing.T) {
+func TestOpenWorkspaceRejectsDuplicateRegistration(t *testing.T) {
 	root, err := canonicalPath(t.TempDir())
 	if err != nil {
 		t.Fatal(err)

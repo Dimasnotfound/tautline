@@ -15,6 +15,7 @@ import (
 const (
 	activityRecordedMeta = "tautline/activityRecorded"
 	activityLimit        = 64
+	activityMonitorLimit = 64
 	activitySnapshotSize = 28
 	activityPayloadBytes = 64 * 1024
 	activityTextBytes    = 40 * 1024
@@ -59,6 +60,8 @@ type activitySnapshot struct {
 	Kind          string              `json:"kind"`
 	Title         string              `json:"title"`
 	Summary       string              `json:"summary"`
+	MonitorID     string              `json:"monitorId"`
+	Active        bool                `json:"active"`
 	WorkspaceID   string              `json:"workspaceId"`
 	WorkspacePath string              `json:"workspacePath,omitempty"`
 	Sequence      uint64              `json:"sequence"`
@@ -67,14 +70,66 @@ type activitySnapshot struct {
 	Selected      *activitySelection  `json:"selected,omitempty"`
 }
 
+type activityMonitor struct {
+	ID          string
+	WorkspaceID string
+	Revision    uint64
+	Events      []activityEvent
+}
+
 type activityStore struct {
-	mu       sync.RWMutex
-	sequence uint64
-	events   []activityEvent
+	mu              sync.RWMutex
+	sequence        uint64
+	activeMonitorID string
+	monitors        map[string]*activityMonitor
+	monitorOrder    []string
 }
 
 func newActivityStore() *activityStore {
-	return &activityStore{events: make([]activityEvent, 0, activityLimit)}
+	return &activityStore{
+		monitors:     make(map[string]*activityMonitor),
+		monitorOrder: make([]string, 0, activityMonitorLimit),
+	}
+}
+
+func (store *activityStore) startMonitor(workspaceID string) string {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	return store.startMonitorLocked(workspaceID).ID
+}
+
+func (store *activityStore) startMonitorLocked(workspaceID string) *activityMonitor {
+	monitor := &activityMonitor{
+		ID:          "monitor_" + randomHex(12),
+		WorkspaceID: strings.TrimSpace(workspaceID),
+		Events:      make([]activityEvent, 0, activityLimit),
+	}
+	store.monitors[monitor.ID] = monitor
+	store.monitorOrder = append(store.monitorOrder, monitor.ID)
+	store.activeMonitorID = monitor.ID
+	for len(store.monitorOrder) > activityMonitorLimit {
+		oldest := store.monitorOrder[0]
+		store.monitorOrder = store.monitorOrder[1:]
+		delete(store.monitors, oldest)
+	}
+	return monitor
+}
+
+func (store *activityStore) activeMonitorLocked() *activityMonitor {
+	if monitor := store.monitors[store.activeMonitorID]; monitor != nil {
+		return monitor
+	}
+	return store.startMonitorLocked("")
+}
+
+func (store *activityStore) bindWorkspace(workspaceID string) {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return
+	}
+	store.mu.Lock()
+	store.activeMonitorLocked().WorkspaceID = workspaceID
+	store.mu.Unlock()
 }
 
 func isInternalActivityTool(toolName string) bool {
@@ -209,7 +264,14 @@ func (store *activityStore) record(toolName string, payload any, fallback string
 	stats, _ := fields["stats"].(map[string]any)
 
 	store.mu.Lock()
+	monitor := store.activeMonitorLocked()
+	if workspaceID != "" {
+		monitor.WorkspaceID = workspaceID
+	} else {
+		workspaceID = monitor.WorkspaceID
+	}
 	store.sequence++
+	monitor.Revision++
 	event := activityEvent{
 		ID:          fmt.Sprintf("event_%d", store.sequence),
 		Sequence:    store.sequence,
@@ -224,33 +286,37 @@ func (store *activityStore) record(toolName string, payload any, fallback string
 		Stats:       cloneActivityMap(stats),
 		Payload:     compact,
 	}
-	store.events = append(store.events, event)
-	if len(store.events) > activityLimit {
-		copy(store.events, store.events[len(store.events)-activityLimit:])
-		store.events = store.events[:activityLimit]
+	monitor.Events = append(monitor.Events, event)
+	if len(monitor.Events) > activityLimit {
+		copy(monitor.Events, monitor.Events[len(monitor.Events)-activityLimit:])
+		monitor.Events = monitor.Events[:activityLimit]
 	}
 	store.mu.Unlock()
 }
 
-func (store *activityStore) snapshot(workspaceID, eventID string) activitySnapshot {
-	workspaceID = strings.TrimSpace(workspaceID)
+func (store *activityStore) snapshotMonitor(monitorID, eventID string) (activitySnapshot, bool) {
+	monitorID = strings.TrimSpace(monitorID)
 	eventID = strings.TrimSpace(eventID)
+
+	store.mu.RLock()
+	monitor := store.monitors[monitorID]
+	if monitor == nil {
+		store.mu.RUnlock()
+		return activitySnapshot{}, false
+	}
+	workspaceID := monitor.WorkspaceID
+	revision := monitor.Revision
+	active := monitor.ID == store.activeMonitorID
+	filtered := make([]activityEvent, 0, activitySnapshotSize)
+	for index := len(monitor.Events) - 1; index >= 0 && len(filtered) < activitySnapshotSize; index-- {
+		filtered = append(filtered, monitor.Events[index])
+	}
+	store.mu.RUnlock()
+
 	workspacePath := ""
 	if workspace, err := getWorkspace(workspaceID); err == nil {
 		workspacePath = workspace.Root
 	}
-
-	store.mu.RLock()
-	sequence := store.sequence
-	filtered := make([]activityEvent, 0, activitySnapshotSize)
-	for index := len(store.events) - 1; index >= 0 && len(filtered) < activitySnapshotSize; index-- {
-		event := store.events[index]
-		if event.WorkspaceID == "" || event.WorkspaceID == workspaceID {
-			filtered = append(filtered, event)
-		}
-	}
-	store.mu.RUnlock()
-
 	views := make([]activityEventView, 0, len(filtered))
 	for _, event := range filtered {
 		views = append(views, event.view())
@@ -282,13 +348,15 @@ func (store *activityStore) snapshot(workspaceID, eventID string) activitySnapsh
 		Kind:          "activity_snapshot",
 		Title:         "Tautline activity",
 		Summary:       summary,
+		MonitorID:     monitorID,
+		Active:        active,
 		WorkspaceID:   workspaceID,
 		WorkspacePath: workspacePath,
-		Sequence:      sequence,
+		Sequence:      revision,
 		UpdatedAt:     updatedAt,
 		Events:        views,
 		Selected:      selected,
-	}
+	}, true
 }
 
 func (event activityEvent) view() activityEventView {

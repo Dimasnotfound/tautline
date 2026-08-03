@@ -2,6 +2,26 @@
 
 All notable changes to Tautline are documented here.
 
+## [2.5.2] - 2026-08-03
+
+### Added
+
+- One unique prompt-scoped activity monitor for every user turn that uses Tautline.
+- A **Latest** button that exits historical inspection, scrolls to the newest event, and resumes automatic tracking.
+- Widget-instance state persistence for the selected event and pinned/latest mode.
+
+### Changed
+
+- `tautline_activity` now runs exactly once at the beginning of each Tautline user turn, even when older widgets are present.
+- `activity_snapshot` now requires the prompt widget's random `monitor_id` instead of following the globally active workspace.
+- Advanced the widget resource to `ui://tautline/activity-v4.html` to prevent cached v3 widgets from using the old global polling contract.
+
+### Fixed
+
+- Older widgets no longer display activity produced by later prompts or other conversations.
+- Archived widgets stop automatic polling while retaining access to their own historical event details.
+- Following the latest event now keeps the newest timeline entry visible at the top.
+
 ## [2.5.1] - 2026-08-03
 
 ### Added

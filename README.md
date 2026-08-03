@@ -6,12 +6,12 @@
 
 <p align="center">
   <strong>A context-safe, local-first MCP control plane for ChatGPT.</strong><br />
-  Workspace tools, one live activity monitor, external MCP integrations, controlled sub-agents, Lightpanda browsing, and Cloudflare Tunnel in one Go runtime.
+  Workspace tools, prompt-scoped activity monitors, external MCP integrations, controlled sub-agents, Lightpanda browsing, and Cloudflare Tunnel in one Go runtime.
 </p>
 
 <p align="center">
   <a href="https://github.com/Dimasnotfound/devspace-mcp/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/Dimasnotfound/devspace-mcp/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tautline version 2.5.1" src="https://img.shields.io/badge/version-2.5.1-38bdf8" />
+  <img alt="Tautline version 2.5.2" src="https://img.shields.io/badge/version-2.5.2-38bdf8" />
   <img alt="Go 1.24 or newer" src="https://img.shields.io/badge/Go-1.24%2B-00ADD8" />
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-818cf8" /></a>
 </p>
@@ -20,7 +20,7 @@
 
 Tautline lets ChatGPT work with explicitly allowed local project folders without uploading an entire repository into a conversation. It provides bounded file and command tools, secure storage for large command output, a local dashboard, optional 9Router sub-agents, native Lightpanda browser tools, Cloudflare Tunnel support, and a generic MCP client that can republish tools from other MCP servers.
 
-Version 2.5.1 adds first-use widget activation. On the first MyLocal interaction in a conversation, the model calls `tautline_activity` once to mount the monitor automatically. That dedicated launcher is the only render tool; `open_workspace`, `workspace_lookup`, file, command, browser, skill, agent, and external-MCP tools remain data-only. The monitor restores the active persisted workspace, uses incremental DOM updates, adaptive polling, bounded detail caching, semantic event colors, and independently scrollable timeline and preview panels.
+Version 2.5.2 introduces prompt-scoped activity monitoring. At the beginning of every user turn that uses Tautline, the model calls `tautline_activity` exactly once to mount one new monitor. Starting the next prompt archives the previous monitor, so older widgets remain fixed and cannot display activity from later prompts or other conversations. The dedicated launcher is the only render tool; `open_workspace`, `workspace_lookup`, file, command, browser, skill, agent, and external-MCP tools remain data-only. The widget supports adaptive polling, bounded detail caching, semantic event colors, independent scrolling, and a **Latest** control that resumes following the newest activity after an older event is inspected.
 
 ## Main capabilities
 
@@ -28,7 +28,7 @@ Version 2.5.1 adds first-use widget activation. On the first MyLocal interaction
 |---|---|
 | Workspace | Open configured roots, search files, read bounded windows, write atomically, edit exact text, execute bounded commands, and review aggregate changes. |
 | Context safety | Keep normal responses compact and place oversized command output in secure, redacted local artifacts. |
-| Activity monitor | Display recent workspace and global tool activity in one MCP Apps resource. |
+| Activity monitor | Create one isolated live widget per user prompt, archive older monitors, and inspect or resume the latest activity. |
 | MCP integrations | Connect to local `stdio` servers or remote Streamable HTTP MCP endpoints and republish their tools with unique prefixes. |
 | Google Docs | Use Google's official remote Docs MCP endpoint after one-time OAuth authorization. |
 | Sub-agents | Delegate controlled tasks through an OpenAI-compatible 9Router endpoint with model and capability allowlists. |
@@ -79,7 +79,7 @@ bin\tautline.exe
 
 The executable contains the current Tautline application icon. The optional Lightpanda bridge is created at `bin\lightpanda-shim.exe`.
 
-When replacing an older instance, double-click `SWITCH_TO_TAUTLINE.cmd`. It stops processes tied to the former workspace, starts this build, and verifies that the v2.5.1 health endpoint is available.
+When replacing an older instance, double-click `SWITCH_TO_TAUTLINE.cmd`. It stops processes tied to the former workspace, starts this build, and verifies that the v2.5.2 health endpoint is available.
 
 ## Existing local installation migration
 
@@ -108,7 +108,7 @@ Private files and all runtime state are excluded by `.gitignore`. Never commit t
 | 9Router | `http://127.0.0.1:20128/v1` |
 | Lightpanda CDP | `http://127.0.0.1:9223` |
 | Runtime directory | `runtime/v2/` |
-| Activity widget | `ui://tautline/activity-v3.html` |
+| Activity widget | `ui://tautline/activity-v4.html` |
 
 ## Configuration
 
@@ -129,17 +129,19 @@ Copy [`.env.example`](.env.example) to `.env` or use `scripts/setup.ps1`. Import
 
 Dashboard changes are saved atomically to `runtime/v2/config/tautline.json`. Environment variables override stored configuration at startup.
 
-## Single activity monitor
+## Prompt-scoped activity monitors
 
-Tautline registers one MCP App resource:
+Tautline registers one reusable MCP App resource:
 
 ```text
-ui://tautline/activity-v3.html
+ui://tautline/activity-v4.html
 ```
 
-Only `tautline_activity` owns that output template. The server instructions direct ChatGPT to call it exactly once as the first MyLocal tool when the conversation does not already contain the monitor. `open_workspace`, `workspace_lookup`, and every other tool remain data-only. The app-only `activity_snapshot` restores the active persisted workspace when the widget polls without a `workspace_id`.
+Only `tautline_activity` owns the output template. The server instructions direct ChatGPT to call it exactly once at the beginning of every user turn that uses Tautline, even when an older widget already exists. Each call creates a unique `monitor_id`. `open_workspace`, `workspace_lookup`, and every other tool remain data-only, while the app-only `activity_snapshot` requires the widget's `monitor_id`.
 
-The monitor shows recent activity and a selected-event inspector. It updates the static shell incrementally, preserves panel scroll positions, caches a bounded number of inspected details, and slows polling automatically when no new event arrives. Open workspace paths are persisted locally in `runtime/v2/state/workspaces.json`, allowing the same deterministic `workspace_id` to recover after restart without mounting another card. Event payloads are redacted and size-limited, and the bounded in-memory activity buffer is cleared when Tautline stops.
+Only the newest prompt monitor receives new events. When another prompt begins, the previous monitor becomes archived and its widget stops automatic polling. Archived widgets remain usable for inspecting their existing timeline, but they cannot display activity from later prompts. The **Latest** button exits a pinned historical selection, returns the timeline to the newest event, and resumes automatic tracking while the monitor is active.
+
+The monitor updates its static shell incrementally, preserves panel scroll positions while inspecting history, caches a bounded number of details, and slows polling automatically when activity is unchanged. Open workspace paths remain persisted locally in `runtime/v2/state/workspaces.json`. Event payloads are redacted and size-limited, prompt monitor IDs are random, and all in-memory activity is cleared when Tautline stops.
 
 ## External MCP integrations
 
@@ -154,7 +156,7 @@ Remote plain HTTP endpoints are rejected unless the host is loopback. Connector 
 
 ### Google Docs
 
-The v2.5.1 runtime supports Google's official Docs MCP endpoint:
+The v2.5.2 runtime supports Google's official Docs MCP endpoint:
 
 ```text
 https://docsmcp.googleapis.com/mcp/v1
@@ -200,7 +202,7 @@ Go builds for Tautline and the Lightpanda shim
 ├── .github/workflows/       # CI and secret scanning
 ├── assets/                  # Current Tautline logo and Windows icon
 ├── cmd/
-│   ├── tautline/            # Tautline v2.5.1 source and embedded web assets
+│   ├── tautline/            # Tautline v2.5.2 source and embedded web assets
 │   └── lightpanda-shim/     # Optional Windows-to-WSL Lightpanda shim
 ├── docs/                    # Setup and coding workflow guides
 ├── runtime/                 # Ignored machine-local state; only .gitkeep is tracked

@@ -12,7 +12,7 @@ import (
 
 const (
 	widgetMIMEType    = "text/html;profile=mcp-app"
-	activityWidgetURI = "ui://tautline/activity-v3.html"
+	activityWidgetURI = "ui://tautline/activity-v4.html"
 )
 
 type widgetResourceDefinition struct {
@@ -25,7 +25,7 @@ func widgetResourceDefinitions() []widgetResourceDefinition {
 	return []widgetResourceDefinition{{
 		URI:         activityWidgetURI,
 		Name:        "Tautline activity monitor",
-		Description: "One live Tautline monitor for workspace activity, file changes, commands, agents, browser actions, skills, and connected MCP tools.",
+		Description: "One prompt-scoped Tautline monitor for workspace activity, file changes, commands, agents, browser actions, skills, and connected MCP tools.",
 	}}
 }
 
