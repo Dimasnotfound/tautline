@@ -1,5 +1,6 @@
 param(
-    [string]$Output = "bin/tautline.exe"
+    [string]$Output = "bin/tautline.exe",
+    [string]$ShimOutput = "bin/lightpanda-shim.exe"
 )
 
 $ErrorActionPreference = "Stop"
@@ -71,7 +72,6 @@ if ($LASTEXITCODE -ne 0) {
     throw "Embedding the Tautline icon failed."
 }
 
-$ShimOutput = "bin/lightpanda-shim.exe"
 & go build -trimpath -ldflags="-s -w" -o $ShimOutput ./cmd/lightpanda-shim
 if ($LASTEXITCODE -ne 0) {
     throw "Lightpanda shim build failed."

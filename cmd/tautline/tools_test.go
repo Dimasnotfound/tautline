@@ -220,7 +220,7 @@ func TestActivityWidgetV252LayoutAndInteractionContract(t *testing.T) {
 		"latestButton.addEventListener(\"click\", followLatest)",
 	} {
 		if !strings.Contains(html, required) {
-			t.Fatalf("v2.5.2 widget contract is missing %q", required)
+			t.Fatalf("v2.6.0 widget contract is missing %q", required)
 		}
 	}
 
@@ -231,9 +231,9 @@ func TestActivityWidgetV252LayoutAndInteractionContract(t *testing.T) {
 	}
 }
 
-func TestV252VersionAndWidgetRevision(t *testing.T) {
-	if appVersion != "2.5.2" {
-		t.Fatalf("appVersion=%q, want 2.5.2", appVersion)
+func TestV260VersionAndWidgetRevision(t *testing.T) {
+	if appVersion != "2.6.0" {
+		t.Fatalf("appVersion=%q, want 2.6.0", appVersion)
 	}
 	if activityWidgetURI != "ui://tautline/activity-v4.html" {
 		t.Fatalf("activityWidgetURI=%q, want the v4 widget resource", activityWidgetURI)

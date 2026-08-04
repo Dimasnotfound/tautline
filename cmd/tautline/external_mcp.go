@@ -8,16 +8,13 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
-	"time"
 	"unicode"
 
 	mcpclient "github.com/mark3labs/mcp-go/client"
-	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -29,6 +26,7 @@ type ExternalMCPStatus struct {
 	Name             string   `json:"name"`
 	Prefix           string   `json:"prefix"`
 	Transport        string   `json:"transport"`
+	ActiveTransport  string   `json:"active_transport,omitempty"`
 	Enabled          bool     `json:"enabled"`
 	Connected        bool     `json:"connected"`
 	Endpoint         string   `json:"endpoint"`
@@ -46,12 +44,13 @@ type ExternalMCPStatus struct {
 }
 
 type externalMCPConnection struct {
-	client        *mcpclient.Client
-	publicTools   []string
-	toolCount     int
-	serverName    string
-	serverVersion string
-	lastError     string
+	client          *mcpclient.Client
+	activeTransport string
+	publicTools     []string
+	toolCount       int
+	serverName      string
+	serverVersion   string
+	lastError       string
 }
 
 type externalMCPManager struct {
@@ -119,6 +118,7 @@ func (m *externalMCPManager) statuses() []ExternalMCPStatus {
 		status := statusFromExternalMCPConfig(config)
 		if connection != nil {
 			status.Connected = connection.client != nil
+			status.ActiveTransport = connection.activeTransport
 			status.ToolCount = connection.toolCount
 			status.ServerName = connection.serverName
 			status.ServerVersion = connection.serverVersion
@@ -151,7 +151,7 @@ func statusFromExternalMCPConfig(config ExternalMCPConfig) ExternalMCPStatus {
 }
 
 func externalMCPEndpoint(config ExternalMCPConfig) string {
-	if config.Transport == "http" {
+	if isExternalMCPURLTransport(config.Transport) {
 		parsed, err := url.Parse(config.URL)
 		if err != nil {
 			return config.URL
@@ -331,11 +331,12 @@ func (m *externalMCPManager) connect(ctx context.Context, id string) (ExternalMC
 	})
 	m.mu.Lock()
 	m.connections[config.ID] = &externalMCPConnection{
-		client:        client,
-		publicTools:   publicTools,
-		toolCount:     len(publicTools),
-		serverName:    serverInfo.ServerInfo.Name,
-		serverVersion: serverInfo.ServerInfo.Version,
+		client:          client,
+		activeTransport: externalMCPClientTransportName(client),
+		publicTools:     publicTools,
+		toolCount:       len(publicTools),
+		serverName:      serverInfo.ServerInfo.Name,
+		serverVersion:   serverInfo.ServerInfo.Version,
 	}
 	m.mu.Unlock()
 	mcpServer.AddTools(entries...)
@@ -344,61 +345,11 @@ func (m *externalMCPManager) connect(ctx context.Context, id string) (ExternalMC
 }
 
 func (m *externalMCPManager) openClient(ctx context.Context, config ExternalMCPConfig) (*mcpclient.Client, *mcp.InitializeResult, []mcp.Tool, error) {
-	timeout := time.Duration(config.TimeoutSeconds) * time.Second
-	initializeContext, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	var client *mcpclient.Client
-	var err error
-	switch config.Transport {
-	case "stdio":
-		workingDirectory, directoryErr := m.externalMCPWorkingDirectory(config)
-		if directoryErr != nil {
-			return nil, nil, nil, directoryErr
-		}
-		resolvedEnvironment, environmentErr := resolveExternalMCPValues(config.Environment)
-		if environmentErr != nil {
-			return nil, nil, nil, environmentErr
-		}
-		configuredEnvironment := environmentEntries(resolvedEnvironment)
-		commandFactory := transport.WithCommandFunc(func(commandContext context.Context, command string, environment []string, args []string) (*exec.Cmd, error) {
-			process := exec.CommandContext(commandContext, command, args...)
-			process.Dir = workingDirectory
-			process.Env = externalMCPChildEnvironment(environment)
-			return process, nil
-		})
-		client, err = mcpclient.NewStdioMCPClientWithOptions(config.Command, configuredEnvironment, config.Args, commandFactory)
-	case "http":
-		client, err = m.newExternalMCPHTTPClient(config, timeout)
-	default:
-		err = fmt.Errorf("unsupported MCP transport %q", config.Transport)
+	transportName := normalizeExternalMCPTransport(config.Transport)
+	if transportName == externalMCPTransportAuto {
+		return m.openClientAutomatic(ctx, config)
 	}
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("start MCP client: %w", err)
-	}
-	closeOnError := true
-	defer func() {
-		if closeOnError {
-			_ = client.Close()
-		}
-	}()
-
-	initialize := mcp.InitializeRequest{}
-	initialize.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
-	initialize.Params.ClientInfo = mcp.Implementation{Name: appName, Version: appVersion}
-	serverInfo, err := client.Initialize(initializeContext, initialize)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("initialize MCP server: %w", err)
-	}
-	listed, err := client.ListTools(initializeContext, mcp.ListToolsRequest{})
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("list MCP tools: %w", err)
-	}
-	if len(listed.Tools) == 0 {
-		return nil, nil, nil, errors.New("MCP server returned no tools")
-	}
-	closeOnError = false
-	return client, serverInfo, listed.Tools, nil
+	return m.openClientUsingTransport(ctx, config, transportName)
 }
 
 func (m *externalMCPManager) externalMCPWorkingDirectory(config ExternalMCPConfig) (string, error) {
@@ -659,13 +610,10 @@ func normalizeExternalMCPConfigs(configs *[]ExternalMCPConfig) error {
 		}
 		seenPrefixes[config.Prefix] = true
 
-		config.Transport = strings.ToLower(strings.TrimSpace(config.Transport))
-		if config.Transport == "" {
-			config.Transport = "stdio"
-		}
+		config.Transport = normalizeExternalMCPTransport(config.Transport)
 		config.Command = strings.TrimSpace(config.Command)
 		config.WorkingDirectory = strings.TrimSpace(config.WorkingDirectory)
-		config.URL = strings.TrimSpace(config.URL)
+		config.URL = normalizeExternalMCPURL(strings.TrimSpace(config.URL))
 		config.Args = compactStrings(config.Args)
 		config.Environment = normalizeStringMap(config.Environment)
 		config.Headers = normalizeStringMap(config.Headers)
@@ -685,14 +633,14 @@ func normalizeExternalMCPConfigs(configs *[]ExternalMCPConfig) error {
 			return fmt.Errorf("MCP server %q timeout must be between 5 and 300 seconds", config.Name)
 		}
 		switch config.Transport {
-		case "stdio":
+		case externalMCPTransportStdio:
 			if config.Command == "" {
 				return fmt.Errorf("MCP server %q requires a command", config.Name)
 			}
 			if config.OAuth != nil {
-				return fmt.Errorf("MCP server %q can use OAuth only with HTTP transport", config.Name)
+				return fmt.Errorf("MCP server %q can use OAuth only with a URL transport", config.Name)
 			}
-		case "http":
+		case externalMCPTransportAuto, externalMCPTransportStreamableHTTP, externalMCPTransportSSE:
 			parsed, err := url.Parse(config.URL)
 			if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 				return fmt.Errorf("MCP server %q has an invalid HTTP URL", config.Name)
@@ -713,6 +661,19 @@ func normalizeExternalMCPConfigs(configs *[]ExternalMCPConfig) error {
 		}
 	}
 	return nil
+}
+
+func normalizeExternalMCPURL(rawURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return rawURL
+	}
+	if parsed.Scheme == "https" && strings.EqualFold(parsed.Hostname(), "docsmcp.googleapis.com") && (parsed.EscapedPath() == "/mcp" || parsed.EscapedPath() == "/mcp/") {
+		parsed.Path = "/mcp/v1"
+		parsed.RawPath = ""
+		return parsed.String()
+	}
+	return rawURL
 }
 
 func isLoopbackMCPHost(host string) bool {

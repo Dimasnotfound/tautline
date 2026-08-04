@@ -128,7 +128,7 @@ func doStart(store *configStore, port, requestedTunnelMode string, openDashboard
 		fmt.Fprintln(os.Stderr, "workspace registry initialization failed:", err)
 		return
 	}
-	oauth := newOAuth()
+	oauth := newOAuth(cfg.RuntimeDir)
 
 	app, err := newApplicationRuntime(store)
 	if err != nil {
@@ -137,11 +137,15 @@ func doStart(store *configStore, port, requestedTunnelMode string, openDashboard
 	}
 	setApplicationRuntime(app)
 
+	primaryInstructions, instructionStatus, instructionErr := hostInstructions()
+	if instructionErr != nil {
+		fmt.Fprintln(os.Stderr, "Codex host instructions:", instructionErr, "Using Tautline instructions only.")
+	}
 	mcpServer := server.NewMCPServer(
 		appName,
 		appVersion,
 		server.WithToolCapabilities(true),
-		server.WithInstructions(codingWorkflowInstructions()),
+		server.WithInstructions(primaryInstructions),
 		server.WithToolHandlerMiddleware(activityMiddleware(app.activity)),
 	)
 	registerWidgetResource(mcpServer)
@@ -172,30 +176,22 @@ func doStart(store *configStore, port, requestedTunnelMode string, openDashboard
 	)
 
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", oauth.requireBearer(mcpHandler))
+	mux.Handle(canonicalMCPPath, oauth.requireBearer(mcpHandler))
+	mux.Handle(versionedMCPPath, oauth.requireBearer(mcpHandler))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status":      "ok",
-			"service":     appName,
-			"version":     appVersion,
-			"widget":      activityWidgetURI,
-			"subagents":   len(app.agents.slotsSnapshot()),
-			"mcp_clients": app.mcpClients.summary(),
-			"lightpanda":  app.lightpanda.status(),
-			"tunnel":      app.tunnel.status(),
+			"status":            "ok",
+			"service":           appName,
+			"version":           appVersion,
+			"widget":            activityWidgetURI,
+			"subagents":         len(app.agents.slotsSnapshot()),
+			"mcp_clients":       app.mcpClients.summary(),
+			"host_instructions": instructionStatus,
+			"lightpanda":        app.lightpanda.status(),
+			"tunnel":            app.tunnel.status(),
 		})
 	})
-	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", oauth.protectedResourceMetadata)
-	mux.HandleFunc("/.well-known/oauth-authorization-server", oauth.authorizationServerMetadata)
-	mux.HandleFunc("/register", oauth.register)
-	mux.HandleFunc("/authorize", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			oauth.authorizationPost(w, r)
-			return
-		}
-		oauth.authorization(w, r)
-	})
-	mux.HandleFunc("/token", oauth.token)
+	registerOAuthRoutes(mux, oauth)
 	registerDashboardRoutes(mux, app)
 
 	address := "127.0.0.1:" + cfg.Port

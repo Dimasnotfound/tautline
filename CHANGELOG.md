@@ -2,6 +2,51 @@
 
 All notable changes to Tautline are documented here.
 
+## [2.6.0] - 2026-08-04
+
+### Added
+
+- Primary ChatGPT host guidance loader for Codex `model_instructions_file` and the global `AGENTS.override.md` or `AGENTS.md` file under `CODEX_HOME`.
+- External MCP transport modes for Streamable HTTP, legacy SSE, and automatic HTTP-to-SSE compatibility fallback.
+- Isolated Windows staged-runtime preflight that verifies version, host instructions, enabled MCP connections, and a complete fresh ChatGPT OAuth registration/PKCE/refresh/MCP flow before stopping the active installation.
+- `-PreflightOnly` switch mode for validating a release without changing the running Tautline process.
+
+### Changed
+
+- Tautline now merges imported Codex guidance with its authoritative local workspace, tool, and safety instructions through the primary `server.WithInstructions(...)` path only.
+- Legacy external MCP `transport: "http"` values are normalized to `streamable-http`; endpoint paths remain unchanged except for the exact legacy Google Docs `/mcp` URL, which migrates to `/mcp/v1`.
+- External MCP clients now follow a consistent Start, Initialize, and ListTools lifecycle across stdio, Streamable HTTP, and SSE.
+- MCP status now reports the active transport selected at runtime.
+
+### Fixed
+
+- Fresh ChatGPT/OpenAI registrations preserve the proven v2.4 public-client contract (`client_id: chatgpt.com`) while loopback and other trusted development clients continue to use unique, persisted dynamic client IDs.
+- OAuth discovery advertises `offline_access`, PKCE S256, resource indicators, and both canonical `/mcp` and cache-busting `/mcp/v2` protected resources.
+- Protected Resource and Authorization Server metadata are served at the standard paths plus the path variants probed by current ChatGPT backends; each MCP endpoint returns an endpoint-specific `WWW-Authenticate` challenge.
+- Dynamic OAuth client registrations are persisted under the runtime state directory so loopback development connections continue to work after a Tautline restart, while legacy v2.4 tokens remain temporarily compatible.
+- Legacy SSE integrations no longer fail with `transport not started yet`.
+- Google Docs and other Streamable HTTP integrations retain defensive gzip decoding and their exact configured endpoint.
+- The update launcher no longer stops v2.4 or another active runtime before the replacement binary and configured MCP integrations pass an isolated health check.
+- Invalid Codex instruction configuration falls back safely at normal startup and fails clearly during release preflight instead of silently activating an incomplete setup.
+
+## [2.5.3] - 2026-08-04
+
+### Added
+
+- Defensive gzip response decoding for Streamable HTTP MCP servers, including responses that omit a usable `Content-Encoding` header.
+- Staged Windows update handoff with health verification, automatic rollback, and temporary-file cleanup.
+
+### Changed
+
+- Updated `github.com/mark3labs/mcp-go` from v0.47.1 to v0.57.0 and raised the Go requirement to 1.25.5.
+- Preserved configured external MCP endpoint paths instead of rewriting Google Docs `/mcp/v1` URLs to `/mcp`; the forced rewrite returned HTTP 400 and disconnected the connector.
+- Extended the Windows build script so the main executable and Lightpanda shim can be built to independent staging paths.
+
+### Fixed
+
+- Google Docs `read_doc` and `update_doc` calls no longer fail when a compressed response reaches the JSON decoder as raw gzip bytes.
+- `SWITCH_TO_TAUTLINE.cmd` no longer requires a prebuilt replacement binary and no longer leaves `.next` or `.previous` executables after a successful or rolled-back update.
+
 ## [2.5.2] - 2026-08-03
 
 ### Added

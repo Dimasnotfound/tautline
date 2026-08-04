@@ -147,7 +147,7 @@
       <div class="form-grid">
         <label class="field"><span>Name</span><input id="mcp-name" required placeholder="Google Docs"></label>
         <label class="field"><span>Tool prefix</span><input id="mcp-prefix" placeholder="gdocs"></label>
-        <label class="field"><span>Transport</span><select id="mcp-transport"><option value="stdio">stdio</option><option value="http">Streamable HTTP</option></select></label>
+        <label class="field"><span>Transport</span><select id="mcp-transport"><option value="stdio">stdio</option><option value="auto">Auto (HTTP then SSE)</option><option value="streamable-http">Streamable HTTP</option><option value="sse">Legacy SSE</option></select></label>
         <label class="field"><span>Timeout</span><input id="mcp-timeout" type="number" min="5" max="300" value="30"></label>
       </div>
       <div id="mcp-stdio-fields" class="form-grid connector-fields">

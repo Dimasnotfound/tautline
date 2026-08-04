@@ -165,7 +165,8 @@ function renderMCP(servers) {
       ...(server.environment_keys || []).map((key) => `env:${key}`),
       ...(server.header_keys || []).map((key) => `header:${key}`),
     ];
-    const detail = [server.transport, `${server.tool_count || 0} tools`, secrets.length ? `${secrets.length} protected values` : "no protected values"].join(" · ");
+    const transport = server.active_transport && server.active_transport !== server.transport ? `${server.transport} → ${server.active_transport}` : server.transport;
+    const detail = [transport, `${server.tool_count || 0} tools`, secrets.length ? `${secrets.length} protected values` : "no protected values"].join(" · ");
     return `<article class="integration-card" data-mcp="${esc(server.id)}">
       <div class="integration-name"><strong title="${esc(server.name)}">${esc(server.name)}</strong><small>${esc(server.prefix)}_* · ${esc(server.server_name || "not initialized")}</small></div>
       <div class="integration-detail"><code title="${esc(server.endpoint)}">${esc(server.endpoint || "Not configured")}</code><small>${esc(detail)}</small>${server.last_error ? `<div class="integration-error" title="${esc(server.last_error)}">${esc(server.last_error)}</div>` : ""}</div>
@@ -291,11 +292,11 @@ function parseOptionalLines(value) {
 }
 
 function syncMCPTransport() {
-  const http = $("mcp-transport").value === "http";
-  $("mcp-http-fields").classList.toggle("hidden", !http);
-  $("mcp-stdio-fields").classList.toggle("hidden", http);
-  $("mcp-url").required = http;
-  $("mcp-command").required = !http;
+  const urlTransport = $("mcp-transport").value !== "stdio";
+  $("mcp-http-fields").classList.toggle("hidden", !urlTransport);
+  $("mcp-stdio-fields").classList.toggle("hidden", urlTransport);
+  $("mcp-url").required = urlTransport;
+  $("mcp-command").required = !urlTransport;
 }
 
 function openMCPDialog(server = null) {
@@ -304,7 +305,8 @@ function openMCPDialog(server = null) {
   $("mcp-form-title").textContent = server ? `Edit ${server.name}` : "Add integration";
   $("mcp-name").value = server?.name || "";
   $("mcp-prefix").value = server?.prefix || "";
-  $("mcp-transport").value = server?.transport || "stdio";
+  const configuredTransport = server?.transport === "http" ? "streamable-http" : (server?.transport || "stdio");
+  $("mcp-transport").value = configuredTransport;
   $("mcp-timeout").value = server?.timeout_seconds || 30;
   $("mcp-command").value = server?.command || "";
   $("mcp-args").value = "";
@@ -364,7 +366,7 @@ $("mcp-form").addEventListener("submit", async (event) => {
       timeout_seconds: Number($("mcp-timeout").value),
       command: transport === "stdio" ? $("mcp-command").value.trim() : "",
       working_directory: transport === "stdio" ? $("mcp-working-directory").value.trim() : "",
-      url: transport === "http" ? $("mcp-url").value.trim() : "",
+      url: transport !== "stdio" ? $("mcp-url").value.trim() : "",
     };
     if (!id || args !== null || transport !== "stdio") body.args = transport === "stdio" ? (args || []) : [];
     if (!id || environment !== null) body.environment = environment || {};

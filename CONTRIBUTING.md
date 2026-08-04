@@ -5,7 +5,7 @@ Thank you for helping improve Tautline.
 ## Development setup
 
 1. Fork or clone the repository.
-2. Install Go 1.24 or newer, Python 3, and Node.js.
+2. Install Go 1.25.5 or newer, Python 3, and Node.js.
 3. Copy `.env.example` to `.env` only when runtime testing is required.
 4. Keep `TAUTLINE_ALLOWED_ROOTS` limited to disposable or intended test projects.
 5. Do not commit `.env`, tokens, runtime state, logs, artifacts, or binaries.

@@ -221,6 +221,7 @@ func (m *externalMCPManager) newExternalMCPHTTPClient(config ExternalMCPConfig, 
 		return nil, err
 	}
 	options := []transport.StreamableHTTPCOption{
+		transport.WithHTTPBasicClient(externalMCPHTTPClient(timeout)),
 		transport.WithHTTPHeaders(resolvedHeaders),
 		transport.WithHTTPTimeout(timeout),
 	}
@@ -239,13 +240,39 @@ func (m *externalMCPManager) newExternalMCPHTTPClient(config ExternalMCPConfig, 
 	return mcpclient.NewOAuthStreamableHttpClient(config.URL, oauthConfig, options...)
 }
 
+func (m *externalMCPManager) newExternalMCPSSEClient(config ExternalMCPConfig, timeout time.Duration) (*mcpclient.Client, error) {
+	resolvedHeaders, err := resolveExternalMCPValues(config.Headers)
+	if err != nil {
+		return nil, err
+	}
+	options := []transport.ClientOption{
+		transport.WithHeaders(resolvedHeaders),
+		transport.WithHTTPClient(externalMCPHTTPClient(0)),
+		transport.WithEndpointTimeout(timeout),
+		transport.WithResponseTimeout(timeout),
+	}
+	if config.OAuth == nil {
+		return mcpclient.NewSSEMCPClient(config.URL, options...)
+	}
+	oauthConfig, _, err := m.externalMCPOAuthClientConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	if _, tokenErr := oauthConfig.TokenStore.GetToken(context.Background()); errors.Is(tokenErr, transport.ErrNoToken) {
+		return mcpclient.NewSSEMCPClient(config.URL, options...)
+	} else if tokenErr != nil {
+		return nil, fmt.Errorf("read OAuth token: %w", tokenErr)
+	}
+	return mcpclient.NewOAuthSSEClient(config.URL, oauthConfig, options...)
+}
+
 func (m *externalMCPManager) authorize(ctx context.Context, id string) (externalMCPOAuthResult, error) {
 	config, exists := m.config(normalizeMCPToken(id))
 	if !exists {
 		return externalMCPOAuthResult{}, fmt.Errorf("MCP server %q was not found", id)
 	}
-	if config.Transport != "http" || config.OAuth == nil {
-		return externalMCPOAuthResult{}, fmt.Errorf("MCP server %q does not use HTTP OAuth", config.Name)
+	if !isExternalMCPURLTransport(config.Transport) || config.OAuth == nil {
+		return externalMCPOAuthResult{}, fmt.Errorf("MCP server %q does not use URL-based OAuth", config.Name)
 	}
 	oauthConfig, tokenPath, err := m.externalMCPOAuthClientConfig(config)
 	if err != nil {

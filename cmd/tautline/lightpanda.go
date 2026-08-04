@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -273,7 +274,7 @@ func (m *lightpandaManager) start() error {
 	}()
 
 	cfg := m.store.snapshot()
-	address := fmt.Sprintf("%s:%d", cfg.Lightpanda.Host, cfg.Lightpanda.Port)
+	address := net.JoinHostPort(cfg.Lightpanda.Host, strconv.Itoa(cfg.Lightpanda.Port))
 	if connection, dialErr := net.DialTimeout("tcp", address, 250*time.Millisecond); dialErr == nil {
 		_ = connection.Close()
 		m.finishLightpandaStart(nil)

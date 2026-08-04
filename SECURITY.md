@@ -5,7 +5,8 @@ Tautline can read and modify files, execute commands, delegate work to external 
 ## Safe defaults
 
 - OAuth bearer authentication is enabled unless explicitly disabled.
-- Authorization uses OAuth Authorization Code with PKCE S256.
+- Authorization uses OAuth Authorization Code with PKCE S256. ChatGPT/OpenAI callbacks use the proven v2.4 public client contract, while trusted loopback callbacks use exact, persisted dynamic registrations.
+- New access and refresh tokens are bound to the client and selected `/mcp` or `/mcp/v2` resource; legacy unbound tokens remain accepted only for migration compatibility.
 - File access is limited to canonical paths inside `TAUTLINE_ALLOWED_ROOTS`.
 - Symlink targets are resolved before the allowed-root check.
 - File writes use temporary files and atomic replacement.
@@ -43,4 +44,4 @@ Open a private GitHub security advisory instead of a public issue. Include the a
 
 ## Supported versions
 
-Security fixes are applied to the latest release line. The currently documented public release is Tautline v2.5.2.
+Security fixes are applied to the latest release line. The currently documented public release is Tautline v2.6.0.

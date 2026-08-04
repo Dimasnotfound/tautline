@@ -60,6 +60,23 @@ func TestNormalizeExternalMCPConfigsRejectsUnsafeHTTP(t *testing.T) {
 	}
 }
 
+func TestNormalizeExternalMCPURLMigratesOnlyLegacyGoogleDocsEndpoint(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "https://docsmcp.googleapis.com/mcp", want: "https://docsmcp.googleapis.com/mcp/v1"},
+		{input: "https://docsmcp.googleapis.com/mcp/", want: "https://docsmcp.googleapis.com/mcp/v1"},
+		{input: "https://docsmcp.googleapis.com/mcp/v1", want: "https://docsmcp.googleapis.com/mcp/v1"},
+		{input: "https://mcp.example.com/mcp", want: "https://mcp.example.com/mcp"},
+	}
+	for _, test := range tests {
+		if got := normalizeExternalMCPURL(test.input); got != test.want {
+			t.Fatalf("normalize URL %q=%q, want %q", test.input, got, test.want)
+		}
+	}
+}
+
 func TestResolveExternalMCPValues(t *testing.T) {
 	t.Setenv("TAUTLINE_TEST_TOKEN", "secret-value")
 	resolved, err := resolveExternalMCPValues(map[string]string{
@@ -109,6 +126,21 @@ func TestBuildExternalMCPToolsPrefixesAndForwards(t *testing.T) {
 	}
 }
 
+func TestNormalizeExternalMCPTransportAliases(t *testing.T) {
+	tests := map[string]string{
+		"http":            externalMCPTransportStreamableHTTP,
+		"streamable_http": externalMCPTransportStreamableHTTP,
+		"legacy-sse":      externalMCPTransportSSE,
+		"automatic":       externalMCPTransportAuto,
+		"stdio":           externalMCPTransportStdio,
+	}
+	for input, want := range tests {
+		if got := normalizeExternalMCPTransport(input); got != want {
+			t.Fatalf("normalize transport %q=%q, want %q", input, got, want)
+		}
+	}
+}
+
 func TestExternalMCPManagerOpensHTTPClient(t *testing.T) {
 	upstream := server.NewMCPServer("mock-docs", "1.0.0", server.WithToolCapabilities(true))
 	upstream.AddTool(mcp.NewTool("ping"), func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -138,6 +170,54 @@ func TestExternalMCPManagerOpensHTTPClient(t *testing.T) {
 	request := toolRequest("ping", map[string]any{})
 	if _, err := client.CallTool(context.Background(), request); err != nil {
 		t.Fatalf("call discovered MCP tool: %v", err)
+	}
+}
+
+func TestExternalMCPManagerOpensLegacySSEClient(t *testing.T) {
+	upstream := server.NewMCPServer("legacy-docs", "1.0.0", server.WithToolCapabilities(true))
+	upstream.AddTool(mcp.NewTool("ping"), func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText("pong"), nil
+	})
+	testServer := server.NewTestServer(upstream)
+	defer testServer.Close()
+
+	manager := &externalMCPManager{}
+	client, serverInfo, tools, err := manager.openClient(context.Background(), ExternalMCPConfig{
+		Name:           "Legacy Docs",
+		Transport:      externalMCPTransportSSE,
+		URL:            testServer.URL + "/sse",
+		TimeoutSeconds: 5,
+	})
+	if err != nil {
+		t.Fatalf("open SSE MCP client: %v", err)
+	}
+	defer client.Close()
+	if serverInfo.ServerInfo.Name != "legacy-docs" || len(tools) != 1 || tools[0].Name != "ping" {
+		t.Fatalf("unexpected SSE discovery: server=%+v tools=%+v", serverInfo.ServerInfo, tools)
+	}
+}
+
+func TestExternalMCPAutoFallsBackToLegacySSE(t *testing.T) {
+	upstream := server.NewMCPServer("auto-legacy-docs", "1.0.0", server.WithToolCapabilities(true))
+	upstream.AddTool(mcp.NewTool("ping"), func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText("pong"), nil
+	})
+	testServer := server.NewTestServer(upstream)
+	defer testServer.Close()
+
+	manager := &externalMCPManager{}
+	client, serverInfo, tools, err := manager.openClient(context.Background(), ExternalMCPConfig{
+		Name:           "Auto Legacy Docs",
+		Transport:      externalMCPTransportAuto,
+		URL:            testServer.URL + "/sse",
+		TimeoutSeconds: 5,
+	})
+	if err != nil {
+		t.Fatalf("auto fallback to SSE: %v", err)
+	}
+	defer client.Close()
+	if serverInfo.ServerInfo.Name != "auto-legacy-docs" || len(tools) != 1 {
+		t.Fatalf("unexpected auto SSE discovery: server=%+v tools=%+v", serverInfo.ServerInfo, tools)
 	}
 }
 

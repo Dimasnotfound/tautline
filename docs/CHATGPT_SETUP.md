@@ -1,4 +1,4 @@
-# Connect Tautline v2.5.2 to ChatGPT
+# Connect Tautline v2.6.0 to ChatGPT
 
 Tautline listens on `127.0.0.1:7688` by default. ChatGPT requires a stable HTTPS origin that forwards to the local MCP endpoint.
 
@@ -15,6 +15,7 @@ Keep these settings enabled for any public connection:
 ```env
 TAUTLINE_REQUIRE_AUTH=true
 TAUTLINE_WIDGETS=on
+TAUTLINE_CODEX_INSTRUCTIONS=on
 ```
 
 Set the exact public origin without `/mcp`:
@@ -23,6 +24,8 @@ Set the exact public origin without `/mcp`:
 TAUTLINE_PUBLIC_BASE_URL=https://your-domain.example
 TAUTLINE_WIDGET_DOMAIN=https://your-domain.example
 ```
+
+Tautline reads optional primary-host guidance from `$CODEX_HOME/config.toml`, falling back to `%USERPROFILE%\.codex\config.toml`. It loads `model_instructions_file` when configured and also reuses the first non-empty global `AGENTS.override.md` or `AGENTS.md`. Invalid explicit configuration falls back to Tautline instructions during normal startup and blocks release preflight.
 
 ## 2. Build and start
 
@@ -55,11 +58,13 @@ The public hostname must forward to `http://127.0.0.1:7688`.
 
 ## 4. Add the MCP server in ChatGPT
 
-Use the public MCP URL:
+Use the public cache-busting MCP URL for a fresh ChatGPT application:
 
 ```text
-https://your-domain.example/mcp
+https://your-domain.example/mcp/v2
 ```
+
+The original `/mcp` endpoint remains available for existing applications. ChatGPT/OpenAI registrations receive the proven v2.4-compatible public client contract, while trusted loopback callbacks receive persisted dynamic client IDs. Both endpoints advertise `tautline offline_access`, PKCE S256, endpoint-specific Protected Resource Metadata, and the additional Authorization Server/OIDC discovery paths probed by current ChatGPT backends. Do not reuse a failed v2.5.3 or early v2.6 application draft.
 
 Complete the owner authorization flow with the private token stored in `.env` or `.owner_token.txt`. Never paste that token into public documentation, source control, or issue reports.
 
@@ -75,7 +80,7 @@ Starting the local executable alone cannot open an iframe because widget renderi
 
 ## 6. Google Docs integration
 
-Tautline v2.5.2 can connect to Google's official Docs MCP endpoint. Register this OAuth redirect URI in the Google Cloud OAuth client:
+Tautline v2.6.0 migrates the exact legacy Google Docs URL `https://docsmcp.googleapis.com/mcp` to `https://docsmcp.googleapis.com/mcp/v1`. Other MCP endpoint paths remain unchanged. Register this OAuth redirect URI in the Google Cloud OAuth client:
 
 ```text
 http://127.0.0.1:8765/oauth/callback
@@ -91,7 +96,12 @@ The resulting token is stored under `runtime/v2/oauth/` and is excluded by `.git
 
 ## Troubleshooting
 
-- Confirm `healthz` reports service `Tautline` and version `2.5.2`.
+- Confirm `healthz` reports service `Tautline` and version `2.6.0`.
 - Confirm the tunnel forwards to port `7688`.
 - Confirm the public base URL and widget domain contain only the HTTPS origin.
+- Confirm canonical Protected Resource Metadata returns `/mcp`, versioned metadata returns `/mcp/v2`, and both advertise `tautline offline_access`.
+- Confirm unauthenticated requests to `/mcp` and `/mcp/v2` return `401` with endpoint-specific `WWW-Authenticate` metadata URLs.
+- Confirm the Authorization Server and OIDC-compatible discovery aliases return the same issuer and registration endpoint.
+- When upgrading from a failed v2.5.3 or early v2.6 connection, remove that application and create a fresh one with `/mcp/v2` after the corrected runtime is active.
+- Preserve `runtime/v2/state/oauth-clients.json` across normal restarts and migrations, but never commit it.
 - Confirm `.env`, owner tokens, OAuth tokens, runtime state, and executables remain untracked.
