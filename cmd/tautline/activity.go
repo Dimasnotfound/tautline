@@ -515,6 +515,10 @@ func activityTitle(toolName, kind, status string) string {
 		return "Workspace searched"
 	case "file":
 		return "File read"
+	case "files":
+		return "Files read"
+	case "doctor":
+		return "Diagnostics completed"
 	case "write":
 		return "File written"
 	case "edit":

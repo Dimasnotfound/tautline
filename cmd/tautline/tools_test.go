@@ -255,7 +255,7 @@ func TestActivityWidgetV252LayoutAndInteractionContract(t *testing.T) {
 		"latestButton.addEventListener(\"click\", followLatest)",
 	} {
 		if !strings.Contains(html, required) {
-			t.Fatalf("v2.7.1 widget contract is missing %q", required)
+			t.Fatalf("activity-v5 widget contract is missing %q", required)
 		}
 	}
 
@@ -266,9 +266,9 @@ func TestActivityWidgetV252LayoutAndInteractionContract(t *testing.T) {
 	}
 }
 
-func TestV271VersionAndWidgetRevision(t *testing.T) {
-	if appVersion != "2.7.1" {
-		t.Fatalf("appVersion=%q, want 2.7.1", appVersion)
+func TestV280VersionAndWidgetRevision(t *testing.T) {
+	if appVersion != "2.8.0" {
+		t.Fatalf("appVersion=%q, want 2.8.0", appVersion)
 	}
 	if activityWidgetURI != "ui://tautline/activity-v5.html" {
 		t.Fatalf("activityWidgetURI=%q, want the v5 widget resource", activityWidgetURI)
@@ -419,7 +419,7 @@ func TestSkillCacheKeyTracksSnapshot(t *testing.T) {
 
 func TestWorkflowInstructionsRequireSkillMatching(t *testing.T) {
 	instructions := codingWorkflowInstructions()
-	for _, expected := range []string{"tautline_activity", "beginning of every user turn", "never call it more than once in the same user turn", "prompt-scoped activity widget", "archives the monitor from the previous prompt", "skills_search", "skill_view", "Before every non-trivial task", "never expose secret configuration values", "workspace_lookup", "prevent duplicate workspace registration"} {
+	for _, expected := range []string{"tautline_activity", "beginning of every user turn", "never call it more than once in the same user turn", "prompt-scoped activity widget", "archives the monitor from the previous prompt", "skills_search", "skill_view", "Before every non-trivial task", "never expose secret configuration values", "workspace_lookup", "mode=worktree", "base_ref", "read_many", "tautline_doctor", "exec_command", "write_stdin", "process session ID"} {
 		if !strings.Contains(instructions, expected) {
 			t.Fatalf("workflow instructions are missing %q", expected)
 		}

@@ -54,25 +54,31 @@ type toolStats struct {
 }
 
 type workspaceView struct {
-	Kind        string     `json:"kind"`
-	Title       string     `json:"title"`
-	Summary     string     `json:"summary,omitempty"`
-	WorkspaceID string     `json:"workspaceId"`
-	Path        string     `json:"path"`
-	Files       []viewFile `json:"files"`
-	Stats       toolStats  `json:"stats"`
-	Truncated   bool       `json:"truncated,omitempty"`
+	Kind        string             `json:"kind"`
+	Title       string             `json:"title"`
+	Summary     string             `json:"summary,omitempty"`
+	WorkspaceID string             `json:"workspaceId"`
+	Path        string             `json:"path"`
+	Mode        string             `json:"mode"`
+	SourceRoot  string             `json:"sourceRoot,omitempty"`
+	Worktree    *workspaceWorktree `json:"worktree,omitempty"`
+	Files       []viewFile         `json:"files"`
+	Stats       toolStats          `json:"stats"`
+	Truncated   bool               `json:"truncated,omitempty"`
 }
 
 type workspaceModelView struct {
-	Kind        string     `json:"kind"`
-	Title       string     `json:"title"`
-	Summary     string     `json:"summary,omitempty"`
-	WorkspaceID string     `json:"workspaceId"`
-	Path        string     `json:"path"`
-	Files       []viewFile `json:"files"`
-	Stats       toolStats  `json:"stats"`
-	Truncated   bool       `json:"truncated,omitempty"`
+	Kind        string             `json:"kind"`
+	Title       string             `json:"title"`
+	Summary     string             `json:"summary,omitempty"`
+	WorkspaceID string             `json:"workspaceId"`
+	Path        string             `json:"path"`
+	Mode        string             `json:"mode"`
+	SourceRoot  string             `json:"sourceRoot,omitempty"`
+	Worktree    *workspaceWorktree `json:"worktree,omitempty"`
+	Files       []viewFile         `json:"files"`
+	Stats       toolStats          `json:"stats"`
+	Truncated   bool               `json:"truncated,omitempty"`
 }
 
 type workspaceLookupView struct {
@@ -160,12 +166,14 @@ func registerTools(s *server.MCPServer) {
 
 	openWorkspaceTool := mcp.NewTool("open_workspace",
 		mcp.WithTitleAnnotation("Open workspace"),
-		mcp.WithDescription("Open one project folder and return a reusable workspace_id. This tool is data-only and never mounts a widget. Call it only when workspace_lookup reports that the folder is not already open."),
+		mcp.WithDescription("Open one project folder and return a reusable workspace_id. Defaults to the existing checkout. Set mode=worktree to create a new isolated managed Git worktree from base_ref or HEAD. Checkout workspaces should be looked up and reused; every worktree request intentionally creates a new workspace."),
 		mcp.WithString("path", mcp.Required(), mcp.Description("Absolute project directory inside an allowed root")),
+		mcp.WithString("mode", mcp.Description("Workspace mode: checkout (default) or worktree")),
+		mcp.WithString("base_ref", mcp.Description("Optional Git ref for mode=worktree; defaults to HEAD")),
 		mcp.WithOutputSchema[workspaceModelView](),
-		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithReadOnlyHintAnnotation(false),
 		mcp.WithDestructiveHintAnnotation(false),
-		mcp.WithIdempotentHintAnnotation(true),
+		mcp.WithIdempotentHintAnnotation(false),
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
 	s.AddTool(openWorkspaceTool, handleOpenWorkspace)
@@ -235,6 +243,7 @@ func registerTools(s *server.MCPServer) {
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
 	s.AddTool(readTool, handleRead)
+	registerReadManyTool(s)
 
 	writeTool := mcp.NewTool("write",
 		mcp.WithTitleAnnotation("Write file"),
@@ -279,6 +288,7 @@ func registerTools(s *server.MCPServer) {
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
 	s.AddTool(bashTool, handleBash)
+	registerProcessSessionTools(s)
 
 	artifactTool := mcp.NewTool("artifact_read",
 		mcp.WithTitleAnnotation("Read artifact"),
@@ -317,6 +327,7 @@ func registerTools(s *server.MCPServer) {
 		s.AddTool(showChangesTool, handleShowChanges)
 	}
 
+	registerDoctorTool(s)
 	registerSkillTools(s)
 	registerAgentTools(s)
 }
@@ -391,33 +402,79 @@ func handleActivitySnapshot(_ context.Context, req mcp.CallToolRequest) (*mcp.Ca
 	return mcp.NewToolResultStructured(snapshot, snapshot.Summary), nil
 }
 
-func handleOpenWorkspace(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	rp, err := resolvePath(argStr(req, "path"))
+func handleOpenWorkspace(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sourcePath, err := resolvePath(argStr(req, "path"))
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	info, err := os.Stat(rp)
+	info, err := os.Stat(sourcePath)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	if !info.IsDir() {
-		return mcp.NewToolResultError("not a directory: " + rp), nil
-	}
-	if existing, found := lookupWorkspaceByRoot(rp); found {
-		return mcp.NewToolResultError(fmt.Sprintf("workspace already open as %s; use workspace_lookup or reuse this workspace_id instead of calling open_workspace again", existing.ID)), nil
+		return mcp.NewToolResultError("not a directory: " + sourcePath), nil
 	}
 
-	state := registerWorkspace(rp)
-	files, stats, truncated, err := repositoryTree(rp)
+	mode := strings.ToLower(strings.TrimSpace(argStr(req, "mode")))
+	if mode == "" {
+		mode = workspaceModeCheckout
+	}
+	if mode != workspaceModeCheckout && mode != workspaceModeWorktree {
+		return mcp.NewToolResultError("mode must be checkout or worktree"), nil
+	}
+	if mode == workspaceModeCheckout && strings.TrimSpace(argStr(req, "base_ref")) != "" {
+		return mcp.NewToolResultError("base_ref is only valid when mode=worktree"), nil
+	}
+
+	var state *workspaceState
+	if mode == workspaceModeWorktree {
+		app, runtimeErr := currentApplicationRuntime()
+		if runtimeErr != nil {
+			return mcp.NewToolResultError(runtimeErr.Error()), nil
+		}
+		createContext, cancel := context.WithTimeout(ctx, 60*time.Second)
+		created, createErr := createManagedWorktree(
+			createContext,
+			sourcePath,
+			argStr(req, "base_ref"),
+			effectiveWorktreeRoot(app.config.snapshot()),
+		)
+		cancel()
+		if createErr != nil {
+			return mcp.NewToolResultError(createErr.Error()), nil
+		}
+		state = registerWorktreeWorkspace(created.SourceRoot, created.Worktree)
+	} else {
+		if existing, found := lookupWorkspaceByRoot(sourcePath); found {
+			return mcp.NewToolResultError(fmt.Sprintf("workspace already open as %s; use workspace_lookup or reuse this workspace_id instead of calling open_workspace again", existing.ID)), nil
+		}
+		state = registerWorkspace(sourcePath)
+	}
+
+	files, stats, truncated, err := repositoryTree(state.Root)
 	if err != nil {
+		if state.Mode == workspaceModeWorktree && state.Worktree != nil {
+			unregisterWorkspace(state.ID)
+			_ = removeManagedWorktree(context.Background(), state.SourceRoot, state.Worktree.Path)
+		}
 		return mcp.NewToolResultError(err.Error()), nil
+	}
+	summary := fmt.Sprintf("%d files · %d folders", stats.Files, stats.Directories)
+	if state.Mode == workspaceModeWorktree {
+		summary = "isolated worktree · " + summary
+		if state.Worktree != nil && state.Worktree.DirtySource {
+			summary += " · source checkout has uncommitted changes"
+		}
 	}
 	widgetView := workspaceView{
 		Kind:        "workspace",
-		Title:       filepath.Base(rp),
-		Summary:     fmt.Sprintf("%d files · %d folders", stats.Files, stats.Directories),
+		Title:       filepath.Base(state.Root),
+		Summary:     summary,
 		WorkspaceID: state.ID,
-		Path:        rp,
+		Path:        state.Root,
+		Mode:        state.Mode,
+		SourceRoot:  state.SourceRoot,
+		Worktree:    cloneWorkspaceWorktree(state.Worktree),
 		Files:       files,
 		Stats:       stats,
 		Truncated:   truncated,
@@ -432,20 +489,29 @@ func handleOpenWorkspace(_ context.Context, req mcp.CallToolRequest) (*mcp.CallT
 		Summary:     widgetView.Summary,
 		WorkspaceID: widgetView.WorkspaceID,
 		Path:        widgetView.Path,
+		Mode:        widgetView.Mode,
+		SourceRoot:  widgetView.SourceRoot,
+		Worktree:    cloneWorkspaceWorktree(widgetView.Worktree),
 		Files:       modelFiles,
 		Stats:       widgetView.Stats,
 		Truncated:   widgetView.Truncated || len(files) > len(modelFiles),
 	}
-	fallback := fmt.Sprintf("Workspace %s opened as %s · %d files · %d folders.", filepath.Base(rp), state.ID, stats.Files, stats.Directories)
+	fallback := fmt.Sprintf("Opened %s workspace %s as %s · %d files · %d folders.", state.Mode, filepath.Base(state.Root), state.ID, stats.Files, stats.Directories)
 	return newToolResult("open_workspace", modelView, widgetView, fallback), nil
 }
 
 func handleWorkspaceLookup(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	rp, err := resolvePath(argStr(req, "path"))
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
+	rawPath := argStr(req, "path")
+	rp, canonicalErr := canonicalPath(rawPath)
 	state, found := lookupWorkspaceByRoot(rp)
+	if canonicalErr != nil || !found {
+		var err error
+		rp, err = resolvePath(rawPath)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		state, found = lookupWorkspaceByRoot(rp)
+	}
 	view := workspaceLookupView{
 		Kind:    "workspace_lookup",
 		Title:   "Workspace not open",

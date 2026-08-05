@@ -44,9 +44,25 @@ func envBool(name string, fallback bool) bool {
 	return envBoolWithFallback(name, fallback)
 }
 
+func commandLineFlagPresent(name string) bool {
+	prefix := "-" + name
+	for _, argument := range os.Args[1:] {
+		if argument == prefix || argument == "-"+prefix || strings.HasPrefix(argument, prefix+"=") || strings.HasPrefix(argument, "-"+prefix+"=") {
+			return true
+		}
+	}
+	return false
+}
+
 func main() {
 	loadDotEnv()
-	store, err := loadTautlineConfig()
+	var store *configStore
+	var err error
+	if commandLineFlagPresent("doctor") {
+		store, err = loadTautlineConfigReadOnly()
+	} else {
+		store, err = loadTautlineConfig()
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "configuration error:", err)
 		os.Exit(1)
@@ -54,6 +70,7 @@ func main() {
 	defaults := store.snapshot()
 	start := flag.Bool("start", false, "start Tautline")
 	stop := flag.Bool("stop", false, "stop the Tautline process for this port")
+	doctor := flag.Bool("doctor", false, "run read-only Tautline diagnostics")
 	openOnly := flag.Bool("open-dashboard", false, "open the dashboard for the running Tautline instance")
 	authMCP := flag.String("auth-mcp", "", "authorize one OAuth-enabled external MCP connector")
 	authGoogleDocs := flag.Bool("auth-google-docs", false, "authorize native Google Docs REST access")
@@ -64,6 +81,12 @@ func main() {
 	flag.Parse()
 
 	switch {
+	case *doctor:
+		view := cliDoctorView(store, *port)
+		printDoctor(view)
+		if doctorHasErrors(view) {
+			os.Exit(1)
+		}
 	case strings.TrimSpace(*authMCP) != "":
 		if err := authorizeExternalMCP(store, *authMCP); err != nil {
 			fmt.Fprintln(os.Stderr, "MCP OAuth authorization failed:", err)
@@ -86,7 +109,7 @@ func main() {
 	case *start:
 		doStart(store, *port, *tunnelMode, *openDashboard)
 	default:
-		fmt.Printf("usage: tautline -start|-stop|-open-dashboard|-auth-mcp <id>|-auth-google-docs|-test-google-docs <document-id> [-port %s] [-dashboard=true] [-tunnel=quick|named]\n", defaults.Port)
+		fmt.Printf("usage: tautline -start|-stop|-doctor|-open-dashboard|-auth-mcp <id>|-auth-google-docs|-test-google-docs <document-id> [-port %s] [-dashboard=true] [-tunnel=quick|named]\n", defaults.Port)
 	}
 }
 
@@ -136,7 +159,7 @@ func doStart(store *configStore, port, requestedTunnelMode string, openDashboard
 	}
 	loadConfig()
 	loadWorkflowConfig()
-	if err := configureWorkspacePersistence(cfg.RuntimeDir); err != nil {
+	if err := configureWorkspacePersistence(cfg.RuntimeDir, effectiveWorktreeRoot(cfg)); err != nil {
 		fmt.Fprintln(os.Stderr, "workspace registry initialization failed:", err)
 		return
 	}
@@ -197,10 +220,12 @@ func doStart(store *configStore, port, requestedTunnelMode string, openDashboard
 			"service":           appName,
 			"version":           appVersion,
 			"widget":            activityWidgetURI,
+			"tools":             len(mcpServer.ListTools()),
 			"subagents":         len(app.agents.slotsSnapshot()),
 			"mcp_clients":       app.mcpClients.summary(),
 			"google_docs":       googleDocsHealth(store),
 			"host_instructions": instructionStatus,
+			"router":            app.agents.routerStatusSnapshot(),
 			"lightpanda":        app.lightpanda.status(),
 			"tunnel":            app.tunnel.status(),
 		})

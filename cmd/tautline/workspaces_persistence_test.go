@@ -14,10 +14,12 @@ func isolateWorkspaceRegistry(t *testing.T, roots []string) {
 	previousByRoot := workspaceStore.byRoot
 	previousActiveID := workspaceStore.activeID
 	previousPersistencePath := workspaceStore.persistencePath
+	previousManagedWorktreeRoot := workspaceStore.managedWorktreeRoot
 	workspaceStore.byID = make(map[string]*workspaceState)
 	workspaceStore.byRoot = make(map[string]*workspaceState)
 	workspaceStore.activeID = ""
 	workspaceStore.persistencePath = ""
+	workspaceStore.managedWorktreeRoot = ""
 	workspaceStore.mu.Unlock()
 	allowedRoots = append([]string(nil), roots...)
 	t.Cleanup(func() {
@@ -27,6 +29,7 @@ func isolateWorkspaceRegistry(t *testing.T, roots []string) {
 		workspaceStore.byRoot = previousByRoot
 		workspaceStore.activeID = previousActiveID
 		workspaceStore.persistencePath = previousPersistencePath
+		workspaceStore.managedWorktreeRoot = previousManagedWorktreeRoot
 		workspaceStore.mu.Unlock()
 	})
 }

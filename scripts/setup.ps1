@@ -52,6 +52,7 @@ $Lines = @(
     "TAUTLINE_REQUIRE_AUTH=true",
     "TAUTLINE_PORT=7688",
     "TAUTLINE_RUNTIME_DIR=runtime/v2",
+    "TAUTLINE_WORKTREE_ROOT=runtime/v2/worktrees",
     "TAUTLINE_OPEN_DASHBOARD=true",
     "TAUTLINE_WIDGETS=on",
     "TAUTLINE_PUBLIC_BASE_URL=$PublicBaseUrl",

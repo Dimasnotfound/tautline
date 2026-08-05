@@ -319,7 +319,7 @@ func defaultSkillBridgeConfig() skillBridgeConfig {
 		snapshot = filepath.Join(home, ".skills_prompt_snapshot.json")
 	}
 	availableTools := splitCSVEnv("DEVSPACE_SKILL_AVAILABLE_TOOLS", []string{
-		"open_workspace", "search", "read", "write", "edit", "bash", "artifact_read", "show_changes",
+		"open_workspace", "search", "read", "read_many", "write", "edit", "bash", "artifact_read", "show_changes", "tautline_doctor",
 		"skills_search", "skill_view", "skill_read_file",
 	})
 	toolsets := splitCSVEnv("DEVSPACE_SKILL_AVAILABLE_TOOLSETS", []string{"terminal", "files"})

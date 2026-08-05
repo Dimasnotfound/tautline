@@ -80,6 +80,7 @@ type ExternalMCPConfig struct {
 type TautlineConfig struct {
 	Port              string              `json:"port"`
 	RuntimeDir        string              `json:"runtime_dir"`
+	WorktreeRoot      string              `json:"worktree_root"`
 	OpenDashboard     bool                `json:"open_dashboard"`
 	PublicBaseURL     string              `json:"public_base_url,omitempty"`
 	WidgetDomain      string              `json:"widget_domain,omitempty"`
@@ -152,6 +153,14 @@ func executableName(base string) string {
 }
 
 func loadTautlineConfig() (*configStore, error) {
+	return loadTautlineConfigWithPersist(true)
+}
+
+func loadTautlineConfigReadOnly() (*configStore, error) {
+	return loadTautlineConfigWithPersist(false)
+}
+
+func loadTautlineConfigWithPersist(persist bool) (*configStore, error) {
 	cfg := defaultTautlineConfig()
 	path := strings.TrimSpace(os.Getenv("TAUTLINE_CONFIG"))
 	if path == "" {
@@ -169,8 +178,10 @@ func loadTautlineConfig() (*configStore, error) {
 		return nil, err
 	}
 	store := &configStore{path: path, value: cfg}
-	if err := store.save(); err != nil {
-		return nil, err
+	if persist {
+		if err := store.save(); err != nil {
+			return nil, err
+		}
 	}
 	return store, nil
 }
@@ -178,6 +189,7 @@ func loadTautlineConfig() (*configStore, error) {
 func applyTautlineEnvironment(cfg *TautlineConfig) {
 	setStringEnv(&cfg.Port, "TAUTLINE_PORT")
 	setStringEnv(&cfg.RuntimeDir, "TAUTLINE_RUNTIME_DIR")
+	setStringEnv(&cfg.WorktreeRoot, "TAUTLINE_WORKTREE_ROOT")
 	setStringEnv(&cfg.PublicBaseURL, "TAUTLINE_PUBLIC_BASE_URL")
 	setStringEnv(&cfg.WidgetDomain, "TAUTLINE_WIDGET_DOMAIN")
 	setStringEnv(&cfg.Router.BaseURL, "TAUTLINE_9ROUTER_BASE_URL")
@@ -304,6 +316,10 @@ func validateTautlineConfig(cfg *TautlineConfig) error {
 	cfg.RuntimeDir = filepath.Clean(strings.TrimSpace(cfg.RuntimeDir))
 	if cfg.RuntimeDir == "." || cfg.RuntimeDir == "" {
 		cfg.RuntimeDir = filepath.Join("runtime", "v2")
+	}
+	cfg.WorktreeRoot = filepath.Clean(strings.TrimSpace(cfg.WorktreeRoot))
+	if cfg.WorktreeRoot == "." || cfg.WorktreeRoot == "" {
+		cfg.WorktreeRoot = filepath.Join(cfg.RuntimeDir, "worktrees")
 	}
 	cfg.Router.BaseURL = strings.TrimRight(strings.TrimSpace(cfg.Router.BaseURL), "/")
 	if cfg.Router.BaseURL == "" {

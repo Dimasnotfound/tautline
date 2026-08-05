@@ -10,8 +10,10 @@ Tautline can read and modify files, execute commands, delegate work to external 
 - File access is limited to canonical paths inside `TAUTLINE_ALLOWED_ROOTS`.
 - Symlink targets are resolved before the allowed-root check.
 - File writes use temporary files and atomic replacement.
-- File reads, command output, and artifact previews are bounded.
-- Commands have timeouts, cancellation, and process-tree termination.
+- File reads, multi-file reads, command output, and artifact previews are bounded.
+- `tautline_doctor` and `-doctor` report only readiness, paths, counts, and masked status; they never return owner tokens, OAuth tokens, router keys, connector headers, or connector environment values.
+- One-shot commands have bounded timeouts and process-tree termination. Interactive process sessions are workspace-scoped, output-bounded, secret-redacted, explicitly interruptible or terminable, and killed during Tautline shutdown.
+- Managed worktrees can originate only from allowed Git repositories and are accepted or restored only inside `TAUTLINE_WORKTREE_ROOT`; they are an isolation boundary for workflow, not a security sandbox.
 - The dashboard binds to `127.0.0.1` and requires a local bootstrap-derived session.
 - Dashboard mutations require CSRF validation.
 - 9Router API keys are not included in dashboard state.
@@ -27,11 +29,12 @@ Tautline can read and modify files, execute commands, delegate work to external 
 3. Keep `TAUTLINE_ALLOWED_ROOTS` as narrow as possible. Do not use an entire system drive or home directory unless the risk is fully understood.
 4. Keep `TAUTLINE_9ROUTER_ALLOWED_MODELS` limited to models approved for delegated work.
 5. Keep `TAUTLINE_AGENT_ENABLED=false` when delegation is not required.
-6. Protect the machine running Tautline. OAuth does not protect against malware already running locally.
-7. Review write, edit, command, and delegation approvals in ChatGPT.
-8. Rotate the owner token or router key if terminal output, `.env`, runtime files, or an access token may have been exposed.
-9. Do not commit `.env`, tunnel credentials, certificates, tokens, PID files, logs, artifacts, runtime configuration, or compiled binaries.
-10. Use a stable HTTPS origin and ensure `TAUTLINE_PUBLIC_BASE_URL` and `TAUTLINE_WIDGET_DOMAIN` match the intended public origin exactly.
+6. Keep `TAUTLINE_WORKTREE_ROOT` inside a private, Tautline-owned directory and do not treat managed worktrees as a shell sandbox.
+7. Protect the machine running Tautline. OAuth does not protect against malware already running locally.
+8. Review write, edit, command, and delegation approvals in ChatGPT.
+9. Rotate the owner token or router key if terminal output, `.env`, runtime files, or an access token may have been exposed.
+10. Do not commit `.env`, tunnel credentials, certificates, tokens, PID files, logs, artifacts, runtime configuration, or compiled binaries.
+11. Use a stable HTTPS origin and ensure `TAUTLINE_PUBLIC_BASE_URL` and `TAUTLINE_WIDGET_DOMAIN` match the intended public origin exactly.
 
 ## Sub-agent and image data
 
@@ -45,4 +48,4 @@ Open a private GitHub security advisory instead of a public issue. Include the a
 
 ## Supported versions
 
-Security fixes are applied to the latest release line. The currently documented public release is Tautline v2.7.1.
+Security fixes are applied to the latest release line. The currently documented public release is Tautline v2.8.0.

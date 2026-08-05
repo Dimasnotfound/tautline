@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/Dimasnotfound/devspace-mcp/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/Dimasnotfound/devspace-mcp/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tautline version 2.7.1" src="https://img.shields.io/badge/version-2.7.1-38bdf8" />
+  <img alt="Tautline version 2.8.0" src="https://img.shields.io/badge/version-2.8.0-38bdf8" />
   <img alt="Go 1.25.5 or newer" src="https://img.shields.io/badge/Go-1.25.5%2B-00ADD8" />
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-818cf8" /></a>
 </p>
@@ -20,13 +20,15 @@
 
 Tautline lets ChatGPT work with explicitly allowed local project folders without uploading an entire repository into a conversation. It provides bounded file and command tools, secure storage for large command output, a local dashboard, optional 9Router sub-agents, native Lightpanda browser tools, Cloudflare Tunnel support, and a generic MCP client that can republish tools from other MCP servers.
 
-Version 2.7.1 fixes prompt-level activity isolation so every widget remains bound to the monitor created by its own prompt, while archived widgets stay unchanged when later prompts use the same workspace. Native Google Docs REST tools, Codex host guidance, ChatGPT OAuth compatibility, multi-transport external MCP integrations, and isolated Windows release preflight remain intact.
+Version 2.8.0 adds managed detached Git worktree workspaces for isolated or parallel changes and pipe-backed process sessions for long-running commands, incremental output polling, stdin, interruption, and process-tree termination. The 2.7.2 doctor and bounded `read_many` additions, prompt-level activity isolation, native Google Docs REST tools, Codex host guidance, ChatGPT OAuth compatibility, multi-transport external MCP integrations, and isolated Windows release preflight remain intact.
 
 ## Main capabilities
 
 | Area | Capability |
 |---|---|
-| Workspace | Open configured roots, search files, read bounded windows, write atomically, edit exact text, execute bounded commands, and review aggregate changes. |
+| Workspace | Reuse existing checkouts or create managed detached Git worktrees, search files, read one bounded window or up to ten files with `read_many`, write atomically, edit exact text, and review aggregate changes. |
+| Commands | Use `bash` for bounded one-shot commands or `exec_command` plus `write_stdin` for long-running pipe-backed sessions with polling, stdin, interruption, and process-tree termination. |
+| Diagnostics | Run `tautline_doctor` or `tautline -doctor` for a read-only runtime, integration, security, and version summary with concrete corrective actions. |
 | Context safety | Keep normal responses compact and place oversized command output in secure, redacted local artifacts. |
 | Activity monitor | Create one isolated live widget per user prompt, archive older monitors, and inspect or resume the latest activity. |
 | MCP integrations | Connect through `stdio`, Streamable HTTP, legacy SSE, or automatic HTTP-to-SSE fallback and republish tools with unique prefixes. |
@@ -79,7 +81,7 @@ bin\tautline.exe
 
 The executable contains the current Tautline application icon. The optional Lightpanda bridge is created at `bin\lightpanda-shim.exe`.
 
-When replacing an older instance, double-click `SWITCH_TO_TAUTLINE.cmd`. It runs all quality gates, starts the staged v2.7.1 binary on an isolated temporary port, verifies native Google Docs activation, configured external MCP integrations, and a fresh ChatGPT OAuth connection flow, and only then stops the old runtime for an atomic handoff. If activation fails, the previous binaries are restored.
+When replacing an older instance, double-click `SWITCH_TO_TAUTLINE.cmd`. It runs all quality gates, starts the staged v2.8.0 binary on an isolated temporary port, verifies native Google Docs activation, configured external MCP integrations, and a fresh ChatGPT OAuth connection flow, and only then stops the old runtime for an atomic handoff. If activation fails, the previous binaries are restored.
 
 ## Existing local installation migration
 
@@ -111,6 +113,14 @@ Private files and all runtime state are excluded by `.gitignore`. Never commit t
 | Runtime directory | `runtime/v2/` |
 | Activity widget | `ui://tautline/activity-v5.html` |
 
+Run a read-only local diagnostic at any time:
+
+```powershell
+bin\tautline.exe -doctor
+```
+
+The command exits non-zero when it detects an error such as an offline runtime, disabled MCP authentication, invalid allowed roots, or an active binary version that does not match the source build.
+
 ## Configuration
 
 Copy [`.env.example`](.env.example) to `.env` or use `scripts/setup.ps1`. Important settings include:
@@ -121,6 +131,7 @@ Copy [`.env.example`](.env.example) to `.env` or use `scripts/setup.ps1`. Import
 | `TAUTLINE_OWNER_TOKEN` | Secret used during OAuth owner authorization. |
 | `TAUTLINE_REQUIRE_AUTH` | Keep `true` whenever the MCP endpoint is exposed. |
 | `TAUTLINE_RUNTIME_DIR` | Local runtime configuration and state directory. |
+| `TAUTLINE_WORKTREE_ROOT` | Directory for Tautline-managed detached Git worktrees. Defaults to `<runtime>/worktrees`. |
 | `TAUTLINE_WIDGETS` | `on` or `off`. Legacy `changes` and `full` values are treated as `on`. |
 | `TAUTLINE_CODEX_INSTRUCTIONS` | Set to `off` to disable loading Codex `model_instructions_file`; enabled by default. |
 | `TAUTLINE_PUBLIC_BASE_URL` | Public HTTPS origin used by OAuth metadata. |
@@ -130,6 +141,14 @@ Copy [`.env.example`](.env.example) to `.env` or use `scripts/setup.ps1`. Import
 | `TAUTLINE_TUNNEL_MODE` | `off`, `quick`, or `named`. |
 
 Dashboard changes are saved atomically to `runtime/v2/config/tautline.json`. Environment variables override stored configuration at startup.
+
+### Managed Git worktrees
+
+`open_workspace` defaults to `mode=checkout`, which opens the user's existing directory and should be reused through `workspace_lookup`. For isolated or parallel work, use `mode=worktree` with an optional `base_ref`. Tautline resolves the requested commit, reports whether the source checkout has uncommitted changes, and creates a new detached worktree under `TAUTLINE_WORKTREE_ROOT` without copying those uncommitted changes. Worktree metadata is persisted in `runtime/v2/state/workspaces.json` and restored only while both the allowed source repository and managed worktree boundary remain valid.
+
+### Interactive process sessions
+
+`bash` remains the bounded one-shot command tool. Use `exec_command` when a command may outlive one MCP call or needs later stdin. A still-running command returns a workspace-scoped `session_id`; pass it to `write_stdin` to poll incremental output, send text, close stdin, request Ctrl-C on Unix or Ctrl-Break on Windows, or terminate the process tree. Sessions are pipe-backed rather than full PTYs, retain at most 1 MiB of pending output, redact secret-looking values before returning them, and are terminated when Tautline shuts down.
 
 ### ChatGPT OAuth registration
 
@@ -225,7 +244,7 @@ Go builds for Tautline and the Lightpanda shim
 ├── .github/workflows/       # CI and secret scanning
 ├── assets/                  # Current Tautline logo and Windows icon
 ├── cmd/
-│   ├── tautline/            # Tautline v2.7.1 source and embedded web assets
+│   ├── tautline/            # Tautline v2.8.0 source and embedded web assets
 │   └── lightpanda-shim/     # Optional Windows-to-WSL Lightpanda shim
 ├── docs/                    # Setup and coding workflow guides
 ├── runtime/                 # Ignored machine-local state; only .gitkeep is tracked

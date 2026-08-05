@@ -2,6 +2,35 @@
 
 All notable changes to Tautline are documented here.
 
+## [2.8.0] - 2026-08-05
+
+### Added
+
+- Managed Git worktree workspaces through `open_workspace` with `mode=worktree` and optional `base_ref`, including detached isolation, dirty-source reporting, bounded creation under `TAUTLINE_WORKTREE_ROOT`, workspace metadata, and restart-safe registry restoration.
+- Interactive pipe-backed process sessions through `exec_command` and `write_stdin`, with incremental polling, stdin delivery, stdin closure, Unix Ctrl-C or Windows Ctrl-Break, process-tree termination, workspace ownership checks, bounded redacted output, and shutdown cleanup.
+
+### Changed
+
+- Workspace persistence now records checkout/worktree mode, source checkout, and managed worktree metadata while remaining compatible with the earlier roots-only state file.
+- Server workflow guidance now distinguishes reusable checkout workspaces from intentionally new isolated worktrees and routes long-running commands through process sessions instead of the one-shot `bash` tool.
+
+### Security
+
+- Managed worktrees may only originate from allowed repositories and must remain inside the configured Tautline worktree root; restored entries that violate either boundary are ignored.
+- Process sessions are scoped to the workspace that created them, cap retained and returned output, redact secret-looking values, and terminate active process trees during Tautline shutdown.
+
+## [2.7.2] - 2026-08-05
+
+### Added
+
+- Read-only `tautline_doctor` MCP tool and `-doctor` CLI mode for checking the active version, configuration, allowed roots, OAuth protection, Google Docs authorization, external MCP connections, published tool count, 9Router, Lightpanda, tunnel status, and concrete corrective actions without returning secret values.
+- Bounded `read_many` MCP tool for reading up to ten UTF-8 workspace files in one call while preserving the existing `read` path guards, line windows, cursors, SHA-256 freshness checks, provenance, per-file errors, and aggregate output limits.
+
+### Changed
+
+- `/healthz` now includes the total published MCP tool count and current 9Router status so the CLI doctor can diagnose a running process without privileged dashboard access.
+- `-doctor` loads configuration without creating or rewriting the runtime configuration file.
+
 ## [2.7.1] - 2026-08-05
 
 ### Fixed

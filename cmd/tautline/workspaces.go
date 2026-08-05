@@ -19,23 +19,35 @@ type fileSnapshot struct {
 }
 
 type workspaceState struct {
-	ID        string
-	Root      string
-	mu        sync.Mutex
-	originals map[string]fileSnapshot
+	ID         string
+	Root       string
+	Mode       string
+	SourceRoot string
+	Worktree   *workspaceWorktree
+	mu         sync.Mutex
+	originals  map[string]fileSnapshot
 }
 
 type workspaceRegistry struct {
-	mu              sync.RWMutex
-	byID            map[string]*workspaceState
-	byRoot          map[string]*workspaceState
-	activeID        string
-	persistencePath string
+	mu                  sync.RWMutex
+	byID                map[string]*workspaceState
+	byRoot              map[string]*workspaceState
+	activeID            string
+	persistencePath     string
+	managedWorktreeRoot string
+}
+
+type persistedWorkspaceEntry struct {
+	Root       string             `json:"root"`
+	Mode       string             `json:"mode,omitempty"`
+	SourceRoot string             `json:"sourceRoot,omitempty"`
+	Worktree   *workspaceWorktree `json:"worktree,omitempty"`
 }
 
 type persistedWorkspaceRegistry struct {
-	Roots             []string `json:"roots"`
-	ActiveWorkspaceID string   `json:"activeWorkspaceId,omitempty"`
+	Roots             []string                  `json:"roots,omitempty"`
+	Workspaces        []persistedWorkspaceEntry `json:"workspaces,omitempty"`
+	ActiveWorkspaceID string                    `json:"activeWorkspaceId,omitempty"`
 }
 
 var workspaceStore = workspaceRegistry{
@@ -44,13 +56,21 @@ var workspaceStore = workspaceRegistry{
 }
 
 func registerWorkspace(root string) *workspaceState {
+	return registerWorkspaceMetadata(root, workspaceModeCheckout, "", nil)
+}
+
+func registerWorktreeWorkspace(sourceRoot string, worktree workspaceWorktree) *workspaceState {
+	return registerWorkspaceMetadata(worktree.Path, workspaceModeWorktree, sourceRoot, &worktree)
+}
+
+func registerWorkspaceMetadata(root, mode, sourceRoot string, worktree *workspaceWorktree) *workspaceState {
 	key := workspaceRootKey(root)
 	workspaceStore.mu.Lock()
 	if existing := workspaceStore.byRoot[key]; existing != nil {
 		workspaceStore.mu.Unlock()
 		return existing
 	}
-	state := registerWorkspaceLocked(root, key)
+	state := registerWorkspaceLocked(root, key, mode, sourceRoot, worktree)
 	shouldPersist := workspaceStore.persistencePath != ""
 	workspaceStore.mu.Unlock()
 	if shouldPersist {
@@ -59,12 +79,37 @@ func registerWorkspace(root string) *workspaceState {
 	return state
 }
 
-func registerWorkspaceLocked(root, key string) *workspaceState {
+func unregisterWorkspace(workspaceID string) {
+	workspaceStore.mu.Lock()
+	state := workspaceStore.byID[strings.TrimSpace(workspaceID)]
+	if state != nil {
+		delete(workspaceStore.byID, state.ID)
+		delete(workspaceStore.byRoot, workspaceRootKey(state.Root))
+		if workspaceStore.activeID == state.ID {
+			workspaceStore.activeID = ""
+		}
+	}
+	shouldPersist := state != nil && workspaceStore.persistencePath != ""
+	workspaceStore.mu.Unlock()
+	if shouldPersist {
+		_ = persistWorkspaceRegistry()
+	}
+}
+
+func registerWorkspaceLocked(root, key, mode, sourceRoot string, worktree *workspaceWorktree) *workspaceState {
 	hash := sha256.Sum256([]byte(key))
+	if mode != workspaceModeWorktree {
+		mode = workspaceModeCheckout
+		sourceRoot = ""
+		worktree = nil
+	}
 	state := &workspaceState{
-		ID:        "ws_" + hex.EncodeToString(hash[:6]),
-		Root:      root,
-		originals: make(map[string]fileSnapshot),
+		ID:         "ws_" + hex.EncodeToString(hash[:6]),
+		Root:       root,
+		Mode:       mode,
+		SourceRoot: sourceRoot,
+		Worktree:   cloneWorkspaceWorktree(worktree),
+		originals:  make(map[string]fileSnapshot),
 	}
 	workspaceStore.byRoot[key] = state
 	workspaceStore.byID[state.ID] = state
@@ -72,10 +117,20 @@ func registerWorkspaceLocked(root, key string) *workspaceState {
 	return state
 }
 
-func configureWorkspacePersistence(runtimeDir string) error {
+func configureWorkspacePersistence(runtimeDir string, worktreeRoots ...string) error {
 	path := filepath.Join(strings.TrimSpace(runtimeDir), "state", "workspaces.json")
+	managedRoot := filepath.Join(strings.TrimSpace(runtimeDir), "worktrees")
+	if len(worktreeRoots) > 0 && strings.TrimSpace(worktreeRoots[0]) != "" {
+		managedRoot = strings.TrimSpace(worktreeRoots[0])
+	}
+	if absolute, err := filepath.Abs(managedRoot); err == nil {
+		managedRoot = absolute
+	}
+	managedRoot = filepath.Clean(managedRoot)
+
 	workspaceStore.mu.Lock()
 	workspaceStore.persistencePath = path
+	workspaceStore.managedWorktreeRoot = managedRoot
 	workspaceStore.mu.Unlock()
 
 	data, err := os.ReadFile(path)
@@ -87,27 +142,26 @@ func configureWorkspacePersistence(runtimeDir string) error {
 	}
 	var persisted persistedWorkspaceRegistry
 	if err := json.Unmarshal(data, &persisted); err != nil {
-		return fmt.Errorf("decode workspace registry: %w", err)
+		return fmt.Errorf("decode %s: %w", path, err)
 	}
 
-	validRoots := make([]string, 0, len(persisted.Roots))
-	for _, root := range persisted.Roots {
-		resolved, err := resolvePath(root)
-		if err != nil {
-			continue
+	entries := persisted.Workspaces
+	if len(entries) == 0 {
+		entries = make([]persistedWorkspaceEntry, 0, len(persisted.Roots))
+		for _, root := range persisted.Roots {
+			entries = append(entries, persistedWorkspaceEntry{Root: root, Mode: workspaceModeCheckout})
 		}
-		info, err := os.Stat(resolved)
-		if err != nil || !info.IsDir() {
-			continue
-		}
-		validRoots = append(validRoots, resolved)
 	}
 
 	workspaceStore.mu.Lock()
-	for _, root := range validRoots {
-		key := workspaceRootKey(root)
+	for _, entry := range entries {
+		restored, ok := restorePersistedWorkspace(entry, managedRoot)
+		if !ok {
+			continue
+		}
+		key := workspaceRootKey(restored.Root)
 		if workspaceStore.byRoot[key] == nil {
-			registerWorkspaceLocked(root, key)
+			registerWorkspaceLocked(restored.Root, key, restored.Mode, restored.SourceRoot, restored.Worktree)
 		}
 	}
 	if persisted.ActiveWorkspaceID != "" && workspaceStore.byID[persisted.ActiveWorkspaceID] != nil {
@@ -117,20 +171,77 @@ func configureWorkspacePersistence(runtimeDir string) error {
 	return persistWorkspaceRegistry()
 }
 
+func restorePersistedWorkspace(entry persistedWorkspaceEntry, managedRoot string) (persistedWorkspaceEntry, bool) {
+	root, err := canonicalPath(entry.Root)
+	if err != nil {
+		return persistedWorkspaceEntry{}, false
+	}
+	info, err := os.Stat(root)
+	if err != nil || !info.IsDir() {
+		return persistedWorkspaceEntry{}, false
+	}
+
+	mode := strings.ToLower(strings.TrimSpace(entry.Mode))
+	if mode == "" || mode == workspaceModeCheckout {
+		if _, err := resolvePath(root); err != nil {
+			return persistedWorkspaceEntry{}, false
+		}
+		return persistedWorkspaceEntry{Root: root, Mode: workspaceModeCheckout}, true
+	}
+	if mode != workspaceModeWorktree || entry.Worktree == nil || !entry.Worktree.Managed {
+		return persistedWorkspaceEntry{}, false
+	}
+
+	sourceRoot, err := canonicalPath(entry.SourceRoot)
+	if err != nil {
+		return persistedWorkspaceEntry{}, false
+	}
+	if _, err := resolvePath(sourceRoot); err != nil {
+		return persistedWorkspaceEntry{}, false
+	}
+	canonicalManagedRoot, err := canonicalPath(managedRoot)
+	if err != nil || !pathInsideRoot(canonicalManagedRoot, root) {
+		return persistedWorkspaceEntry{}, false
+	}
+	worktree := *entry.Worktree
+	worktree.Path = root
+	worktree.Managed = true
+	return persistedWorkspaceEntry{
+		Root:       root,
+		Mode:       workspaceModeWorktree,
+		SourceRoot: sourceRoot,
+		Worktree:   &worktree,
+	}, true
+}
+
 func persistWorkspaceRegistry() error {
 	workspaceStore.mu.RLock()
 	path := workspaceStore.persistencePath
 	activeID := workspaceStore.activeID
-	roots := make([]string, 0, len(workspaceStore.byRoot))
+	entries := make([]persistedWorkspaceEntry, 0, len(workspaceStore.byRoot))
+	legacyRoots := make([]string, 0, len(workspaceStore.byRoot))
 	for _, state := range workspaceStore.byRoot {
-		roots = append(roots, state.Root)
+		entries = append(entries, persistedWorkspaceEntry{
+			Root:       state.Root,
+			Mode:       state.Mode,
+			SourceRoot: state.SourceRoot,
+			Worktree:   cloneWorkspaceWorktree(state.Worktree),
+		})
+		if state.Mode != workspaceModeWorktree {
+			legacyRoots = append(legacyRoots, state.Root)
+		}
 	}
 	workspaceStore.mu.RUnlock()
 	if strings.TrimSpace(path) == "" {
 		return nil
 	}
-	sort.Strings(roots)
-	data, err := json.MarshalIndent(persistedWorkspaceRegistry{Roots: roots, ActiveWorkspaceID: activeID}, "", "  ")
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Root < entries[j].Root })
+	sort.Strings(legacyRoots)
+	data, err := json.MarshalIndent(persistedWorkspaceRegistry{
+		Roots:             legacyRoots,
+		Workspaces:        entries,
+		ActiveWorkspaceID: activeID,
+	}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -312,4 +423,12 @@ func (state *workspaceState) recordOriginal(absolutePath string, snapshot fileSn
 		state.originals[relative] = snapshot
 	}
 	return nil
+}
+
+func cloneWorkspaceWorktree(value *workspaceWorktree) *workspaceWorktree {
+	if value == nil {
+		return nil
+	}
+	copyValue := *value
+	return &copyValue
 }

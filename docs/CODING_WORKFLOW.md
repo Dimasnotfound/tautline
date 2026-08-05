@@ -1,42 +1,57 @@
 # Context-safe coding workflow
 
-Tautline v2.7.1 uses one new prompt-scoped activity monitor per user turn, keeps each widget bound to its own prompt monitor, and archives older widgets without allowing later activity to replace their timeline. Bounded tool results, native Google Docs REST tools, Codex host guidance, multi-transport MCP support, and an isolated release preflight continue to protect the active runtime.
+Tautline v2.8.0 uses one new prompt-scoped activity monitor per user turn, managed checkout or worktree workspaces, and bounded single-call or interactive command execution. Multi-file reads, read-only diagnostics, native Google Docs REST tools, Codex host guidance, multi-transport MCP support, and isolated release preflight continue to protect the active runtime.
 
 ## 1. Start one monitor per user turn
 
 At the beginning of every user turn that uses MyLocal or Tautline, call `tautline_activity` exactly once before any other Tautline tool. Call it even when the conversation already contains older Tautline widgets, but never call it more than once in the same user turn. The call creates a unique prompt monitor and archives the monitor from the previous prompt.
 
-## 2. Reuse or open one workspace
+## 2. Reuse an existing checkout
 
-When a project may already be open, call `workspace_lookup` first. Reuse its `workspace_id` when found. Call `open_workspace` only once when lookup reports that the project is not open, then reuse that `workspace_id` for every later filesystem and command operation. Both tools are data-only, and the current prompt monitor binds to the selected workspace automatically.
+When work should happen in the user's current checkout, call `workspace_lookup` first. Reuse its `workspace_id` when found. Call `open_workspace` in its default `checkout` mode only when lookup reports that the project is not open, then reuse that identifier for later filesystem and command operations.
 
-## 3. Search before reading
+## 3. Create an isolated worktree when needed
 
-Use `search` to find exact symbols, filenames, errors, or configuration keys. Read only the relevant line windows instead of loading complete large files.
+For parallel or isolated Git work, call `open_workspace` with `mode=worktree` and an optional `base_ref`. Every worktree call intentionally creates a new detached workspace under `TAUTLINE_WORKTREE_ROOT`; it does not copy uncommitted source-checkout changes. Continue with the returned worktree `workspace_id`, not the checkout identifier. Tautline reports the source root, resolved base commit, and whether the source checkout was dirty.
 
-## 4. Apply scoped changes
+## 4. Search before reading
+
+Use `search` to find exact symbols, filenames, errors, or configuration keys. Read only the relevant line windows instead of loading complete large files. When a small known set of files is required together, use `read_many` for at most ten bounded requests rather than issuing repeated full-file reads.
+
+## 5. Apply scoped changes
 
 - Use `edit` for one exact, unique replacement.
 - Use `write` for a complete file creation or intentional full replacement.
-- Use `bash` for bounded commands, builds, tests, and file operations that cannot be expressed safely through `edit` or `write`.
+- Use command tools for builds, tests, Git operations, and other terminal work rather than using shell redirection to replace file-edit tools.
 
-## 5. Handle large output safely
+## 6. Choose the correct command mode
 
-Small command output remains inline. Large output is redacted and stored as a secure artifact. Use `artifact_read` to inspect only relevant ranges or search matches.
+Use `bash` for bounded one-shot commands that should complete within one call. Use `exec_command` for a long-running command or one that may require later input. When `exec_command` returns a `session_id`, call `write_stdin` with the same `workspace_id` to:
 
-## 6. Use skills before non-trivial work
+- poll incremental output;
+- send UTF-8 input or close stdin;
+- request Ctrl-C on Unix or Ctrl-Break on Windows;
+- terminate the process tree.
+
+Process sessions are pipe-backed, not full PTYs, and therefore do not support terminal resizing or applications that require a real interactive terminal screen.
+
+## 7. Handle output safely
+
+Large one-shot `bash` output is redacted and stored as a secure artifact; use `artifact_read` to inspect relevant ranges. Process-session output remains in a bounded in-memory incremental buffer, is redacted before it is returned, and reports when earlier bytes were omitted.
+
+## 8. Use skills before non-trivial work
 
 Call `skills_search` with the resolved task, then load a relevant compatible result through `skill_view`. Skill files remain read-only and secret-redacted.
 
-## 7. Delegate only when useful
+## 9. Delegate only when useful
 
 Sub-agent tasks require an enabled slot and an allowed 9Router model. Delegated workspace access is read-only. Inspect the result with `get_agent_run` before applying any proposed change.
 
-## 8. Verify the result
+## 10. Verify the result
 
-Run the repository's existing formatting, tests, static checks, and build commands. Do not claim completion when a required verification step failed or was skipped.
+Run the repository's existing formatting, tests, static checks, and build commands. Do not claim completion when a required verification step failed or was skipped. Worktree verification must be performed inside the returned worktree workspace so the user's source checkout remains isolated.
 
-## 9. Review aggregate changes
+## 11. Review aggregate changes
 
 After the final file modification, call `show_changes` exactly once. Use the resulting review to confirm that only intended files changed and private configuration remains untracked.
 

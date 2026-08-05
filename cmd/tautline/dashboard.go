@@ -22,6 +22,7 @@ const dashboardCookieName = "tautline_admin"
 type dashboardConfigView struct {
 	Port          string           `json:"port"`
 	RuntimeDir    string           `json:"runtime_dir"`
+	WorktreeRoot  string           `json:"worktree_root"`
 	PublicBaseURL string           `json:"public_base_url,omitempty"`
 	WidgetDomain  string           `json:"widget_domain,omitempty"`
 	AgentEnabled  bool             `json:"agent_enabled"`
@@ -236,6 +237,7 @@ func (a *applicationRuntime) dashboardSnapshot() dashboardState {
 		Config: dashboardConfigView{
 			Port:          cfg.Port,
 			RuntimeDir:    cfg.RuntimeDir,
+			WorktreeRoot:  effectiveWorktreeRoot(cfg),
 			PublicBaseURL: cfg.PublicBaseURL,
 			WidgetDomain:  cfg.WidgetDomain,
 			AgentEnabled:  cfg.AgentEnabled,

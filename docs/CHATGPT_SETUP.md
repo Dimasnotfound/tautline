@@ -1,4 +1,4 @@
-# Connect Tautline v2.7.1 to ChatGPT
+# Connect Tautline v2.8.0 to ChatGPT
 
 Tautline listens on `127.0.0.1:7688` by default. ChatGPT requires a stable HTTPS origin that forwards to the local MCP endpoint.
 
@@ -102,7 +102,8 @@ An existing `docsmcp.googleapis.com` connector is migrated automatically into th
 
 ## Troubleshooting
 
-- Confirm `healthz` reports service `Tautline`, version `2.7.1`, and `google_docs.mode` as `native-rest` when Google Docs is enabled.
+- Run `bin\tautline.exe -doctor` first for a read-only summary and concrete corrective actions.
+- Confirm `healthz` reports service `Tautline`, version `2.8.0`, the published tool count, 9Router status, and `google_docs.mode` as `native-rest` when Google Docs is enabled.
 - Confirm the tunnel forwards to port `7688`.
 - Confirm the public base URL and widget domain contain only the HTTPS origin.
 - Confirm canonical Protected Resource Metadata returns `/mcp`, versioned metadata returns `/mcp/v2`, and both advertise `tautline offline_access`.
