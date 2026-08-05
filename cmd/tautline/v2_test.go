@@ -41,6 +41,22 @@ func newTestConfigStore(t *testing.T, routerURL string) *configStore {
 	return store
 }
 
+func TestEffectiveTunnelModeUsesNamedConfigWhenAutostartModeIsOff(t *testing.T) {
+	cfg := TunnelConfig{Mode: "off", Name: "devspace", AutoStart: true}
+	if got := effectiveTunnelMode("", cfg); got != "named" {
+		t.Fatalf("effective tunnel mode = %q, want named", got)
+	}
+	if got := effectiveTunnelMode("quick", cfg); got != "quick" {
+		t.Fatalf("explicit tunnel mode = %q, want quick", got)
+	}
+	if got := effectiveTunnelMode("", TunnelConfig{Mode: "off", AutoStart: true}); got != "quick" {
+		t.Fatalf("quick fallback tunnel mode = %q, want quick", got)
+	}
+	if got := effectiveTunnelMode("", TunnelConfig{Mode: "named", Name: "devspace"}); got != "" {
+		t.Fatalf("disabled tunnel mode = %q, want empty", got)
+	}
+}
+
 func newTestApplicationRuntime(t *testing.T, routerURL string) *applicationRuntime {
 	t.Helper()
 	app, err := newApplicationRuntime(newTestConfigStore(t, routerURL))
@@ -214,6 +230,18 @@ func TestParseTunnelConnectorCommandDetectsOrigin(t *testing.T) {
 	origin, matched = parseTunnelConnectorCommand("devspace", `cloudflared tunnel --url="http://127.0.0.1:7688" run "devspace"`)
 	if !matched || origin != "http://127.0.0.1:7688" {
 		t.Fatalf("quoted connector was not parsed: matched=%t origin=%q", matched, origin)
+	}
+}
+
+func TestTunnelCommandUsesLoopbackOriginHost(t *testing.T) {
+	cfg := defaultTautlineConfig()
+	args := tunnelCommandArgs(cfg, "named", "http://127.0.0.1:7676")
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "--http-host-header localhost") {
+		t.Fatalf("tunnel command does not override origin Host: %s", joined)
+	}
+	if !strings.Contains(joined, "run "+cfg.Tunnel.Name) {
+		t.Fatalf("named tunnel command is missing tunnel name: %s", joined)
 	}
 }
 

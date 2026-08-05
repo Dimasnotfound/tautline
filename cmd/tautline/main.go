@@ -242,10 +242,7 @@ func doStart(store *configStore, port, requestedTunnelMode string, openDashboard
 			}
 		}()
 	}
-	mode := strings.ToLower(strings.TrimSpace(requestedTunnelMode))
-	if mode == "" && cfg.Tunnel.AutoStart {
-		mode = cfg.Tunnel.Mode
-	}
+	mode := effectiveTunnelMode(requestedTunnelMode, cfg.Tunnel)
 	if mode == "quick" || mode == "named" {
 		go func() {
 			if err := app.tunnel.start(mode); err != nil {
@@ -269,6 +266,24 @@ func doStart(store *configStore, port, requestedTunnelMode string, openDashboard
 	defer cancel()
 	app.shutdown()
 	_ = httpServer.Shutdown(shutdownContext)
+}
+
+func effectiveTunnelMode(requested string, cfg TunnelConfig) string {
+	mode := strings.ToLower(strings.TrimSpace(requested))
+	if mode != "" {
+		return mode
+	}
+	if !cfg.AutoStart {
+		return ""
+	}
+	mode = strings.ToLower(strings.TrimSpace(cfg.Mode))
+	if mode == "off" || mode == "" {
+		if strings.TrimSpace(cfg.Name) != "" {
+			return "named"
+		}
+		return "quick"
+	}
+	return mode
 }
 
 func doStop(store *configStore, port string) {

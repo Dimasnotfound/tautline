@@ -177,6 +177,7 @@ func processExists(pid int) bool {
 func (m *tunnelManager) status() TunnelStatus {
 	cfg := m.store.snapshot().Tunnel
 	m.mu.Lock()
+	mode := m.mode
 	publicURL := m.publicURL
 	tunnelID := m.tunnelID
 	originURL := m.originURL
@@ -194,6 +195,9 @@ func (m *tunnelManager) status() TunnelStatus {
 		OriginURL:    originURL,
 		TunnelID:     tunnelID,
 		LastError:    lastError,
+	}
+	if strings.TrimSpace(mode) != "" {
+		status.Mode = mode
 	}
 	if status.PublicURL == "" && cfg.CustomDomain != "" {
 		status.PublicURL = "https://" + strings.TrimPrefix(cfg.CustomDomain, "https://")
@@ -283,14 +287,7 @@ func (m *tunnelManager) start(mode string) error {
 	if err != nil {
 		return err
 	}
-	args := []string{"tunnel"}
-	if protocol := strings.TrimSpace(cfg.Tunnel.Protocol); protocol != "" {
-		args = append(args, "--protocol", protocol)
-	}
-	args = append(args, "--url", origin)
-	if mode == "named" {
-		args = append(args, "run", cfg.Tunnel.Name)
-	}
+	args := tunnelCommandArgs(cfg, mode, origin)
 	command := exec.Command(executable, args...)
 	command.Dir = mustWorkingDirectory()
 	stdout, err := command.StdoutPipe()
@@ -339,6 +336,18 @@ func (m *tunnelManager) start(mode string) error {
 	case <-time.After(wait):
 		return m.validateStartedTunnel(command, mode)
 	}
+}
+
+func tunnelCommandArgs(cfg TautlineConfig, mode, origin string) []string {
+	args := []string{"tunnel"}
+	if protocol := strings.TrimSpace(cfg.Tunnel.Protocol); protocol != "" {
+		args = append(args, "--protocol", protocol)
+	}
+	args = append(args, "--url", origin, "--http-host-header", "localhost")
+	if mode == "named" {
+		args = append(args, "run", cfg.Tunnel.Name)
+	}
+	return args
 }
 
 func (m *tunnelManager) validateStartedTunnel(command *exec.Cmd, mode string) error {
