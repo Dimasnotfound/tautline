@@ -20,6 +20,8 @@ const (
 	defaultAgentCapacity      = 2
 	maximumAgentCapacity      = 16
 	defaultAgentTimeoutSecond = 900
+	agentBackendChatGPTRelay  = "chatgpt-relay"
+	agentBackend9Router       = "9router"
 )
 
 type RouterConfig struct {
@@ -90,6 +92,7 @@ type TautlineConfig struct {
 	GoogleDocs        GoogleDocsConfig    `json:"google_docs,omitempty"`
 	MCPServers        []ExternalMCPConfig `json:"mcp_servers,omitempty"`
 	AgentEnabled      bool                `json:"agent_enabled"`
+	AgentBackend      string              `json:"agent_backend"`
 	AgentCapacity     int                 `json:"agent_capacity"`
 	DefaultImageGate  bool                `json:"default_image_gate"`
 	DefaultRTK        bool                `json:"default_rtk"`
@@ -137,6 +140,7 @@ func defaultTautlineConfig() TautlineConfig {
 			TimeoutSeconds: defaultExternalMCPTimeout,
 		},
 		AgentEnabled:     true,
+		AgentBackend:     agentBackendChatGPTRelay,
 		AgentCapacity:    defaultAgentCapacity,
 		DefaultImageGate: false,
 		DefaultRTK:       false,
@@ -216,6 +220,7 @@ func applyTautlineEnvironment(cfg *TautlineConfig) {
 	cfg.Lightpanda.BlockPrivateNetworks = envBoolWithFallback("TAUTLINE_LIGHTPANDA_BLOCK_PRIVATE_NETWORKS", cfg.Lightpanda.BlockPrivateNetworks)
 	cfg.Tunnel.AutoStart = envBoolWithFallback("TAUTLINE_TUNNEL_AUTOSTART", cfg.Tunnel.AutoStart)
 	cfg.AgentEnabled = envBoolWithFallback("TAUTLINE_AGENT_ENABLED", cfg.AgentEnabled)
+	setStringEnv(&cfg.AgentBackend, "TAUTLINE_AGENT_BACKEND")
 	cfg.DefaultImageGate = envBoolWithFallback("TAUTLINE_AGENT_IMAGE_SUPPORT", cfg.DefaultImageGate)
 	cfg.DefaultRTK = envBoolWithFallback("TAUTLINE_AGENT_RTK", cfg.DefaultRTK)
 	cfg.DefaultCaveman = envBoolWithFallback("TAUTLINE_AGENT_CAVEMAN", cfg.DefaultCaveman)
@@ -321,13 +326,23 @@ func validateTautlineConfig(cfg *TautlineConfig) error {
 	if cfg.WorktreeRoot == "." || cfg.WorktreeRoot == "" {
 		cfg.WorktreeRoot = filepath.Join(cfg.RuntimeDir, "worktrees")
 	}
+	cfg.AgentBackend = strings.ToLower(strings.TrimSpace(cfg.AgentBackend))
+	if cfg.AgentBackend == "" {
+		cfg.AgentBackend = agentBackendChatGPTRelay
+	}
+	if cfg.AgentBackend != agentBackendChatGPTRelay && cfg.AgentBackend != agentBackend9Router {
+		return fmt.Errorf("invalid agent backend %q: expected %s or %s", cfg.AgentBackend, agentBackendChatGPTRelay, agentBackend9Router)
+	}
 	cfg.Router.BaseURL = strings.TrimRight(strings.TrimSpace(cfg.Router.BaseURL), "/")
 	if cfg.Router.BaseURL == "" {
 		cfg.Router.BaseURL = defaultRouterBaseURL
 	}
 	parsed, err := url.Parse(cfg.Router.BaseURL)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-		return fmt.Errorf("invalid 9Router base URL %q", cfg.Router.BaseURL)
+		if cfg.AgentBackend == agentBackend9Router {
+			return fmt.Errorf("invalid 9Router base URL %q", cfg.Router.BaseURL)
+		}
+		cfg.Router.BaseURL = defaultRouterBaseURL
 	}
 	cfg.Router.DefaultModel = strings.TrimSpace(cfg.Router.DefaultModel)
 	cfg.Router.AllowedModels = normalizeModelList(cfg.Router.AllowedModels)

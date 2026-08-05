@@ -2,6 +2,23 @@
 
 All notable changes to Tautline are documented here.
 
+## [2.9.0] - 2026-08-05
+
+### Added
+
+- ChatGPT Relay Agents as the default sub-agent backend. `delegate_task` returns a worker prompt for a manually opened ordinary ChatGPT conversation, which claims the task through `claim_agent_task`, reports progress through `update_agent_run`, and submits its result through `complete_agent_task`.
+- Random one-time relay join codes, private in-memory worker tokens, constant-time token comparison, timeout and cancellation handling, and activity metadata sanitization.
+- Dashboard and diagnostics support for switching between `chatgpt-relay` and the optional legacy `9router` backend.
+
+### Changed
+
+- Sub-agent delegation no longer requires 9Router by default and makes no Codex or OpenAI API model request. Legacy 9Router execution remains available when explicitly selected.
+- Router health probes are skipped while ChatGPT relay is active.
+
+### Security
+
+- Relay join codes cannot be reused, worker tokens are never added to activity payloads, and both secrets are cleared when a run completes, fails, times out, or is cancelled.
+
 ## [2.8.1] - 2026-08-05
 
 ### Fixed

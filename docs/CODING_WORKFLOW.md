@@ -1,6 +1,6 @@
 # Context-safe coding workflow
 
-Tautline v2.8.1 creates one new prompt-scoped activity monitor at the first prompt-boundary tool in each user turn, while retaining managed checkout or worktree workspaces and bounded single-call or interactive command execution. Multi-file reads, read-only diagnostics, native Google Docs REST tools, Codex host guidance, multi-transport MCP support, and isolated release preflight continue to protect the active runtime.
+Tautline v2.9.0 creates one new prompt-scoped activity monitor at the first prompt-boundary tool in each user turn, while retaining managed checkout or worktree workspaces, ChatGPT relay workers, and bounded single-call or interactive command execution. Multi-file reads, read-only diagnostics, native Google Docs REST tools, Codex host guidance, multi-transport MCP support, and isolated release preflight continue to protect the active runtime.
 
 ## 1. Start one monitor per user turn
 
@@ -45,7 +45,7 @@ Call `skills_search` with the resolved task, then load a relevant compatible res
 
 ## 9. Delegate only when useful
 
-Sub-agent tasks require an enabled slot and an allowed 9Router model. Delegated workspace access is read-only. Inspect the result with `get_agent_run` before applying any proposed change.
+Sub-agent tasks require an enabled slot. With the default `chatgpt-relay` backend, `delegate_task` returns `worker_prompt`; ask the user to open an ordinary ChatGPT New Chat and paste it. That worker calls `claim_agent_task`, keeps `worker_token` private, works only on the returned task and workspace, reports meaningful progress through `update_agent_run`, and calls `complete_agent_task` exactly once before its final response. Inspect the result with `get_agent_run`. The optional `9router` backend still enforces its model allowlist.
 
 ## 10. Verify the result
 

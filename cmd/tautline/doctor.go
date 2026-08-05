@@ -46,7 +46,8 @@ type doctorView struct {
 	MCP                  doctorMCPCounts       `json:"mcp"`
 	MCPServers           []ExternalMCPStatus   `json:"mcp_servers,omitempty"`
 	GoogleDocs           googleDocsHealthView  `json:"google_docs"`
-	Router               RouterStatus          `json:"router"`
+	AgentBackend         string                `json:"agent_backend"`
+	Router               RouterStatus          `json:"router,omitempty"`
 	Lightpanda           LightpandaStatus      `json:"lightpanda"`
 	Tunnel               TunnelStatus          `json:"tunnel"`
 	HostInstructions     hostInstructionStatus `json:"host_instructions"`
@@ -61,7 +62,8 @@ type doctorHealthResponse struct {
 	Tools            int                   `json:"tools"`
 	MCPClients       doctorMCPCounts       `json:"mcp_clients"`
 	GoogleDocs       googleDocsHealthView  `json:"google_docs"`
-	Router           RouterStatus          `json:"router"`
+	AgentBackend     string                `json:"agent_backend"`
+	Router           RouterStatus          `json:"router,omitempty"`
 	Lightpanda       LightpandaStatus      `json:"lightpanda"`
 	Tunnel           TunnelStatus          `json:"tunnel"`
 	HostInstructions hostInstructionStatus `json:"host_instructions"`
@@ -70,7 +72,7 @@ type doctorHealthResponse struct {
 func registerDoctorTool(s *server.MCPServer) {
 	tool := mcp.NewTool("tautline_doctor",
 		mcp.WithTitleAnnotation("Diagnose Tautline"),
-		mcp.WithDescription("Run a read-only Tautline diagnostic summary for version, configuration, allowed roots, OAuth readiness, Google Docs, external MCP connections, published tools, 9Router, Lightpanda, tunnel, and concrete corrective actions. Secret values are never returned."),
+		mcp.WithDescription("Run a read-only Tautline diagnostic summary for version, configuration, allowed roots, OAuth readiness, Google Docs, external MCP connections, published tools, the active sub-agent backend, Lightpanda, tunnel, and concrete corrective actions. Secret values are never returned."),
 		mcp.WithOutputSchema[doctorView](),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithDestructiveHintAnnotation(false),
@@ -96,6 +98,7 @@ func runtimeDoctorView(runtime *applicationRuntime) doctorView {
 	view.VersionMatch = true
 	view.MCPServers = runtime.mcpClients.statuses()
 	view.MCP = countMCPStatuses(view.MCPServers)
+	view.AgentBackend = runtime.config.snapshot().AgentBackend
 	view.Router = runtime.agents.routerStatusSnapshot()
 	view.Lightpanda = runtime.lightpanda.status()
 	view.Tunnel = runtime.tunnel.status()
@@ -140,6 +143,7 @@ func cliDoctorView(store *configStore, port string) doctorView {
 	view.PublishedTools = health.Tools
 	view.MCP = health.MCPClients
 	view.GoogleDocs = health.GoogleDocs
+	view.AgentBackend = health.AgentBackend
 	view.Router = health.Router
 	view.Lightpanda = health.Lightpanda
 	view.Tunnel = health.Tunnel
@@ -173,6 +177,7 @@ func newDoctorView(store *configStore) doctorView {
 		AuthRequired:         doctorAuthRequired(),
 		OwnerTokenConfigured: doctorOwnerTokenConfigured(),
 		GoogleDocs:           googleDocsHealth(store),
+		AgentBackend:         cfg.AgentBackend,
 	}
 	if info, err := os.Stat(store.path); err == nil && !info.IsDir() {
 		view.ConfigExists = true
@@ -224,10 +229,12 @@ func appendRuntimeDoctorChecks(view *doctorView, cfg TautlineConfig) {
 	} else if view.MCP.Configured > 0 {
 		addDoctorCheck(view, "external MCP", "ok", fmt.Sprintf("all %d integrations are connected", view.MCP.Configured), "")
 	}
-	if cfg.AgentEnabled && !view.Router.Reachable {
-		addDoctorCheck(view, "9Router", "warn", "9Router is not reachable", "Start 9Router or disable sub-agent delegation when it is not needed.")
+	if cfg.AgentEnabled && cfg.AgentBackend == agentBackendChatGPTRelay {
+		addDoctorCheck(view, "sub-agent backend", "ok", "ChatGPT relay is active; no model router, API key, Codex process, or browser automation is required", "Open a new ordinary ChatGPT conversation and paste delegate_task.worker_prompt for each worker.")
+	} else if cfg.AgentEnabled && !view.Router.Reachable {
+		addDoctorCheck(view, "9Router", "warn", "legacy 9Router backend is selected but not reachable", "Start 9Router, switch TAUTLINE_AGENT_BACKEND to chatgpt-relay, or disable delegation.")
 	} else if cfg.AgentEnabled {
-		addDoctorCheck(view, "9Router", "ok", fmt.Sprintf("9Router is reachable with %d models", len(view.Router.Models)), "")
+		addDoctorCheck(view, "9Router", "ok", fmt.Sprintf("legacy 9Router is reachable with %d models", len(view.Router.Models)), "")
 	}
 	if cfg.Lightpanda.NativeMCP && !view.Lightpanda.NativeMCPReady {
 		addDoctorCheck(view, "Lightpanda", "warn", "native Lightpanda MCP is not ready", "Check the configured Lightpanda executable, Docker, or WSL runtime.")

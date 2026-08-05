@@ -22,9 +22,10 @@ type hostInstructionStatus struct {
 }
 
 // hostInstructions builds the instructions advertised by Tautline's primary MCP
-// server to ChatGPT. It intentionally does not affect the 9Router sub-agent
-// prompts. Codex instructions are optional guidance; Tautline's local tool and
-// safety rules remain authoritative and are appended last.
+// server to ChatGPT. Relay worker chats receive these host instructions through
+// their own MCP connection; legacy 9Router prompts remain separate. Codex
+// guidance is optional; Tautline's local tool and safety rules remain
+// authoritative and are appended last.
 func hostInstructions() (string, hostInstructionStatus, error) {
 	workflow := codingWorkflowInstructions()
 	codexInstructions, status, err := loadCodexHostGuidance()

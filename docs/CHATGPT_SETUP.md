@@ -1,4 +1,4 @@
-# Connect Tautline v2.8.1 to ChatGPT
+# Connect Tautline v2.9.0 to ChatGPT
 
 Tautline listens on `127.0.0.1:7688` by default. ChatGPT requires a stable HTTPS origin that forwards to the local MCP endpoint.
 
@@ -16,6 +16,7 @@ Keep these settings enabled for any public connection:
 TAUTLINE_REQUIRE_AUTH=true
 TAUTLINE_WIDGETS=on
 TAUTLINE_CODEX_INSTRUCTIONS=on
+TAUTLINE_AGENT_BACKEND=chatgpt-relay
 ```
 
 Set the exact public origin without `/mcp`:
@@ -78,7 +79,13 @@ ui://tautline/activity-v6.html
 
 Starting the local executable alone cannot open an iframe because widget rendering is initiated by a ChatGPT tool call. Each rendered widget receives a unique prompt `monitor_id`. When the next prompt begins, the previous widget becomes archived and stops automatic polling, so it cannot show activity from later prompts. Use `workspace_lookup` before `open_workspace`; both tools and all later workspace, command, browser, skill, agent, and external-MCP calls remain data-only. Use the widget's **Latest** button to return from an older selected event to live tracking.
 
-## 6. Google Docs integration
+## 6. Use ordinary ChatGPT relay workers
+
+The default relay does not create a consumer ChatGPT conversation automatically. In the main conversation, call `delegate_task`, then copy the returned `worker_prompt`. Open **New Chat** manually, ensure the same Tautline app is available there, paste the prompt, and send it. The worker chat claims the one-time code, receives the exact task and workspace, reports progress, and completes the run. Return to the main conversation and inspect it with `get_agent_run`.
+
+Do not reveal or copy the returned `worker_token`; it is intended only for tool calls inside that worker conversation. A join code can be claimed once. Cancelling or timing out a run invalidates its code and token. The relay makes no Codex, OpenAI API, 9Router, Chromium, Playwright, Selenium, or Electron request. Images must be attached manually in the worker chat.
+
+## 7. Google Docs integration
 
 Tautline v2.7.0 exposes Google Docs tools directly from the Go runtime and uses the regular Google Docs REST API. Enable the Google Docs API in the selected Google Cloud project and register this OAuth redirect URI:
 
@@ -103,7 +110,7 @@ An existing `docsmcp.googleapis.com` connector is migrated automatically into th
 ## Troubleshooting
 
 - Run `bin\tautline.exe -doctor` first for a read-only summary and concrete corrective actions.
-- Confirm `healthz` reports service `Tautline`, version `2.8.1`, the published tool count, 9Router status, and `google_docs.mode` as `native-rest` when Google Docs is enabled.
+- Confirm `healthz` reports service `Tautline`, version `2.9.0`, the published tool count, `agent_backend` as `chatgpt-relay`, and `google_docs.mode` as `native-rest` when Google Docs is enabled.
 - Confirm the tunnel forwards to port `7688`.
 - Confirm the public base URL and widget domain contain only the HTTPS origin.
 - Confirm canonical Protected Resource Metadata returns `/mcp`, versioned metadata returns `/mcp/v2`, and both advertise `tautline offline_access`.

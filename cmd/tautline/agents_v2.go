@@ -54,6 +54,7 @@ type AgentRun struct {
 	Status          string         `json:"status"`
 	Phase           string         `json:"phase"`
 	Activity        string         `json:"activity"`
+	ClaimedAt       *time.Time     `json:"claimed_at,omitempty"`
 	Output          string         `json:"output,omitempty"`
 	Error           string         `json:"error,omitempty"`
 	Usage           map[string]any `json:"usage,omitempty"`
@@ -78,8 +79,10 @@ type AgentDelegateRequest struct {
 }
 
 type agentRunState struct {
-	value  AgentRun
-	cancel context.CancelFunc
+	value       AgentRun
+	cancel      context.CancelFunc
+	claimCode   string
+	workerToken string
 }
 
 type agentManager struct {
@@ -294,6 +297,9 @@ func (m *agentManager) delegate(request AgentDelegateRequest) (AgentRun, error) 
 	if !cfg.AgentEnabled {
 		return AgentRun{}, errors.New("sub-agent delegation is disabled")
 	}
+	if cfg.AgentBackend == agentBackendChatGPTRelay {
+		return m.delegateChatGPTRelay(request, cfg)
+	}
 	model := strings.TrimSpace(request.Model)
 	if model == "" {
 		model = cfg.Router.DefaultModel
@@ -388,7 +394,7 @@ func (m *agentManager) trimRunsLocked() {
 	for len(m.history) > maxAgentRuns {
 		oldest := m.history[0]
 		m.history = m.history[1:]
-		if state := m.runs[oldest]; state != nil && (state.value.Status == "running" || state.value.Status == "queued") {
+		if state := m.runs[oldest]; state != nil && isAgentRunActiveStatus(state.value.Status) {
 			m.history = append(m.history, oldest)
 			break
 		}
@@ -765,6 +771,8 @@ func (m *agentManager) finishRun(id, status, activity, output string, runErr err
 	}
 	state.value.UpdatedAt = now
 	state.value.CompletedAt = &now
+	state.claimCode = ""
+	state.workerToken = ""
 	state.cancel()
 	for index := range m.slots {
 		if m.slots[index].ID == state.value.SlotID && m.slots[index].ActiveRunID == id {
@@ -782,7 +790,7 @@ func (m *agentManager) cancelRun(id string) error {
 		m.mu.Unlock()
 		return fmt.Errorf("unknown agent run %q", id)
 	}
-	if state.value.Status != "queued" && state.value.Status != "running" {
+	if !isAgentRunActiveStatus(state.value.Status) {
 		m.mu.Unlock()
 		return fmt.Errorf("agent run %s is already %s", id, state.value.Status)
 	}
@@ -793,6 +801,12 @@ func (m *agentManager) cancelRun(id string) error {
 }
 
 func (m *agentManager) refreshRouterStatus(ctx context.Context) RouterStatus {
+	if m.store.snapshot().AgentBackend != agentBackend9Router {
+		m.mu.Lock()
+		m.routerStatus = RouterStatus{}
+		m.mu.Unlock()
+		return RouterStatus{}
+	}
 	status := m.router.status(ctx)
 	m.mu.Lock()
 	m.routerStatus = status

@@ -25,6 +25,7 @@ func newTestConfigStore(t *testing.T, routerURL string) *configStore {
 	cfg.RuntimeDir = runtimeDir
 	cfg.Port = "7688"
 	if routerURL != "" {
+		cfg.AgentBackend = agentBackend9Router
 		cfg.Router.BaseURL = strings.TrimRight(routerURL, "/") + "/v1"
 	}
 	cfg.Router.DefaultModel = "test-model"
@@ -114,7 +115,7 @@ func waitForAgentTerminal(t *testing.T, manager *agentManager, runID string) Age
 		if !exists {
 			t.Fatalf("agent run %s disappeared", runID)
 		}
-		if run.Status != "queued" && run.Status != "running" {
+		if !isAgentRunActiveStatus(run.Status) {
 			return run
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -286,12 +287,244 @@ func TestSubAgentGlobalToggleAndModelAllowlist(t *testing.T) {
 	}
 	if err := app.config.update(func(cfg *TautlineConfig) error {
 		cfg.AgentEnabled = true
+		cfg.AgentBackend = agentBackend9Router
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := app.agents.delegate(AgentDelegateRequest{Task: "Must be rejected", Model: "forbidden-model"}); err == nil || !strings.Contains(err.Error(), "not allowed") {
 		t.Fatalf("model outside the allowlist was not rejected: %v", err)
+	}
+}
+
+func TestDefaultAgentBackendUsesChatGPTRelay(t *testing.T) {
+	cfg := defaultTautlineConfig()
+	if cfg.AgentBackend != agentBackendChatGPTRelay {
+		t.Fatalf("default agent backend=%q, want %q", cfg.AgentBackend, agentBackendChatGPTRelay)
+	}
+	cfg.AgentBackend = "invalid"
+	if err := validateTautlineConfig(&cfg); err == nil || !strings.Contains(err.Error(), "agent backend") {
+		t.Fatalf("invalid agent backend was accepted: %v", err)
+	}
+}
+
+func TestChatGPTRelayDoesNotProbeLegacyRouter(t *testing.T) {
+	var requests atomic.Int32
+	router := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+	}))
+	defer router.Close()
+
+	store := newTestConfigStore(t, "")
+	if err := store.update(func(cfg *TautlineConfig) error {
+		cfg.AgentBackend = agentBackendChatGPTRelay
+		cfg.Router.BaseURL = router.URL + "/v1"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	app, err := newApplicationRuntime(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := app.agents.refreshRouterStatus(context.Background())
+	if requests.Load() != 0 || status.Reachable || status.BaseURL != "" {
+		t.Fatalf("chatgpt-relay touched the legacy router: requests=%d status=%+v", requests.Load(), status)
+	}
+}
+
+func TestChatGPTRelayClaimProgressAndComplete(t *testing.T) {
+	app := newTestApplicationRuntime(t, "")
+	run, err := app.agents.delegate(AgentDelegateRequest{
+		Task:           "Review the relay implementation",
+		WorkspaceID:    "ws_relay",
+		AgentID:        "relay-reviewer",
+		Name:           "Relay Reviewer",
+		Role:           "Review only",
+		TimeoutSeconds: 60,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != "waiting_worker" || run.Provider != "ChatGPT" || run.Model != "current-chat" {
+		t.Fatalf("unexpected relay run: %+v", run)
+	}
+	prompt, ok := app.agents.chatGPTRelayWorkerPrompt(run.ID)
+	if !ok || !strings.Contains(prompt, "@Tautline") || !strings.Contains(prompt, "join_") {
+		t.Fatalf("relay worker prompt is missing: %q", prompt)
+	}
+	joinCode := ""
+	for _, field := range strings.Fields(prompt) {
+		if strings.HasPrefix(strings.ToLower(field), "join_") {
+			joinCode = strings.TrimRight(field, ".,")
+			break
+		}
+	}
+	if joinCode == "" {
+		t.Fatalf("join code was not found in worker prompt: %q", prompt)
+	}
+	if _, err := app.agents.claimChatGPTRelayTask("join_WRONG"); err == nil {
+		t.Fatal("invalid relay join code was accepted")
+	}
+	assignment, err := app.agents.claimChatGPTRelayTask(joinCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assignment.RunID != run.ID || assignment.WorkerToken == "" || assignment.Task != run.Task || assignment.WorkspaceID != "ws_relay" {
+		t.Fatalf("unexpected relay assignment: %+v", assignment)
+	}
+	if _, err := app.agents.claimChatGPTRelayTask(joinCode); err == nil {
+		t.Fatal("one-time relay join code was accepted twice")
+	}
+	if _, err := app.agents.updateChatGPTRelayTask(run.ID, "wrong-token", "reviewing"); err == nil {
+		t.Fatal("invalid worker token updated the run")
+	}
+	updated, err := app.agents.updateChatGPTRelayTask(run.ID, assignment.WorkerToken, "Reviewing the changed files "+assignment.WorkerToken)
+	if err != nil || updated.Phase != "working" || strings.Contains(updated.Activity, assignment.WorkerToken) || !strings.Contains(updated.Activity, "[REDACTED]") {
+		t.Fatalf("relay progress update failed or leaked its token: run=%+v err=%v", updated, err)
+	}
+	completed, err := app.agents.completeChatGPTRelayTask(run.ID, assignment.WorkerToken, "Review passed "+assignment.WorkerToken, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.Status != "completed" || strings.Contains(completed.Output, assignment.WorkerToken) || !strings.Contains(completed.Output, "[REDACTED]") || completed.CompletedAt == nil {
+		t.Fatalf("relay task did not complete safely: %+v", completed)
+	}
+	slots := app.agents.slotsSnapshot()
+	if len(slots) == 0 || slots[0].Busy || slots[0].ActiveRunID != "" {
+		t.Fatalf("relay slot was not released: %+v", slots)
+	}
+}
+
+func TestChatGPTRelayCancellationInvalidatesJoinCode(t *testing.T) {
+	app := newTestApplicationRuntime(t, "")
+	run, err := app.agents.delegate(AgentDelegateRequest{Task: "Wait for a worker", TimeoutSeconds: 60})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, ok := app.agents.chatGPTRelayWorkerPrompt(run.ID)
+	if !ok {
+		t.Fatal("relay prompt was not created")
+	}
+	joinCode := ""
+	for _, field := range strings.Fields(prompt) {
+		if strings.HasPrefix(strings.ToLower(field), "join_") {
+			joinCode = strings.TrimRight(field, ".,")
+			break
+		}
+	}
+	if err := app.agents.cancelRun(run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.agents.claimChatGPTRelayTask(joinCode); err == nil {
+		t.Fatal("cancelled relay join code remained claimable")
+	}
+	cancelled, _ := app.agents.getRun(run.ID)
+	if cancelled.Status != "cancelled" || cancelled.CompletedAt == nil {
+		t.Fatalf("relay cancellation did not become terminal: %+v", cancelled)
+	}
+	if slots := app.agents.slotsSnapshot(); len(slots) == 0 || slots[0].Busy {
+		t.Fatalf("cancelled relay did not release its slot: %+v", slots)
+	}
+}
+
+func TestDelegateTaskKeepsRelayJoinCodeOutOfActivityMetadata(t *testing.T) {
+	app := newTestApplicationRuntime(t, "")
+	setApplicationRuntime(app)
+	t.Cleanup(func() { setApplicationRuntime(nil) })
+	result, err := handleDelegateTask(context.Background(), toolRequest("delegate_task", map[string]any{
+		"task":            "Inspect relay join code handling",
+		"timeout_seconds": 60,
+	}))
+	if err != nil || result == nil || result.IsError {
+		t.Fatalf("delegate_task failed: result=%+v err=%v", result, err)
+	}
+	view := decodeStructuredResult[agentRunView](t, result.StructuredContent)
+	if !strings.Contains(view.WorkerPrompt, "join_") {
+		t.Fatalf("worker prompt has no join code: %+v", view)
+	}
+	encodedMeta, err := json.Marshal(result.Meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(bytes.ToLower(encodedMeta), []byte("join_")) || bytes.Contains(encodedMeta, []byte(`"worker_prompt":`)) {
+		t.Fatalf("relay join code leaked into activity metadata: %s", encodedMeta)
+	}
+}
+
+func TestClaimAgentTaskKeepsWorkerTokenOutOfActivityMetadata(t *testing.T) {
+	app := newTestApplicationRuntime(t, "")
+	setApplicationRuntime(app)
+	t.Cleanup(func() { setApplicationRuntime(nil) })
+	run, err := app.agents.delegate(AgentDelegateRequest{Task: "Inspect token handling", TimeoutSeconds: 60})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, ok := app.agents.chatGPTRelayWorkerPrompt(run.ID)
+	if !ok {
+		t.Fatal("relay prompt was not created")
+	}
+	joinCode := ""
+	for _, field := range strings.Fields(prompt) {
+		if strings.HasPrefix(strings.ToLower(field), "join_") {
+			joinCode = strings.TrimRight(field, ".,")
+			break
+		}
+	}
+	result, err := handleClaimAgentTask(context.Background(), toolRequest("claim_agent_task", map[string]any{"join_code": joinCode}))
+	if err != nil || result == nil || result.IsError {
+		t.Fatalf("claim_agent_task failed: result=%+v err=%v", result, err)
+	}
+	assignment := decodeStructuredResult[agentWorkerAssignment](t, result.StructuredContent)
+	if assignment.WorkerToken == "" {
+		t.Fatal("worker token was not returned to the worker model")
+	}
+	encodedMeta, err := json.Marshal(result.Meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encodedMeta, []byte(assignment.WorkerToken)) || bytes.Contains(encodedMeta, []byte(`"worker_token"`)) {
+		t.Fatalf("worker token leaked into activity metadata: %s", encodedMeta)
+	}
+
+	invalidToken := "worker-secret-that-must-not-leak"
+	errorResult, err := handleUpdateAgentRun(context.Background(), toolRequest("update_agent_run", map[string]any{
+		"run_id":       run.ID,
+		"worker_token": invalidToken,
+		"activity":     "testing failure metadata",
+	}))
+	if err != nil || errorResult == nil || !errorResult.IsError {
+		t.Fatalf("invalid worker token did not return a tool error: result=%+v err=%v", errorResult, err)
+	}
+	encodedErrorMeta, err := json.Marshal(errorResult.Meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encodedErrorMeta, []byte(invalidToken)) || bytes.Contains(encodedErrorMeta, []byte(`"worker_token"`)) {
+		t.Fatalf("worker token leaked from an error path into activity metadata: %s", encodedErrorMeta)
+	}
+}
+
+func TestChatGPTRelayToolsAreRegistered(t *testing.T) {
+	mcpServer := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(true))
+	registerAgentTools(mcpServer)
+	tools := mcpServer.ListTools()
+	for _, name := range []string{"list_subagents", "delegate_task", "get_agent_run", "cancel_agent_run", "claim_agent_task", "update_agent_run", "complete_agent_task"} {
+		entry, ok := tools[name]
+		if !ok {
+			t.Fatalf("agent tool %s is not registered", name)
+		}
+		encoded, err := json.Marshal(entry.Tool)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if name == "claim_agent_task" && (!bytes.Contains(encoded, []byte("join_code")) || !bytes.Contains(encoded, []byte("worker_token"))) {
+			t.Fatalf("claim_agent_task contract is incomplete: %s", encoded)
+		}
+		if name == "complete_agent_task" && (!bytes.Contains(encoded, []byte("run_id")) || !bytes.Contains(encoded, []byte("worker_token")) || !bytes.Contains(encoded, []byte("output"))) {
+			t.Fatalf("complete_agent_task contract is incomplete: %s", encoded)
+		}
 	}
 }
 
@@ -328,7 +561,7 @@ func TestDashboardIncludesLocalIconAndAgentControls(t *testing.T) {
 		t.Fatal(err)
 	}
 	html := string(data)
-	for _, required := range []string{"/assets/icon.svg", `id="agents-enabled"`, `id="model-list"`} {
+	for _, required := range []string{"/assets/icon.svg", `id="agents-enabled"`, `id="agent-backend"`, `value="chatgpt-relay"`, `id="model-list"`} {
 		if !strings.Contains(html, required) {
 			t.Fatalf("dashboard HTML is missing %s", required)
 		}

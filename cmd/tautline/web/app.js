@@ -64,7 +64,7 @@ function setInput(id, value) {
 
 function stateClass(status) {
   if (["completed", "running", "ready", "online", "connected"].includes(status)) return "ok";
-  if (["failed", "cancelled", "offline", "missing", "error"].includes(status)) return "bad";
+  if (["failed", "cancelled", "timed_out", "offline", "missing", "error"].includes(status)) return "bad";
   return "warn";
 }
 
@@ -138,12 +138,27 @@ function renderRouterModelControls(config, router) {
   syncRouterDefaultOptions(config.default_model || "");
 }
 
+function syncAgentBackendFields(backend = $("agent-backend").value) {
+  const legacy = backend === "9router";
+  document.querySelectorAll(".legacy-router-field").forEach((node) => node.classList.toggle("hidden", !legacy));
+  $("relay-help").classList.toggle("hidden", legacy);
+}
+
 function renderRouter(state) {
   const router = state.router || {};
   const config = state.config.router || {};
-  $("metric-router").textContent = router.reachable ? "Connected" : "Offline";
-  $("metric-router-detail").textContent = router.reachable ? `${(router.models || []).length} models` : (router.error || router.base_url || "Unavailable");
-  badge($("router-badge"), router.reachable ? "Connected" : "Offline", router.reachable ? "ok" : "bad");
+  const backend = state.config.agent_backend || "chatgpt-relay";
+  setInput("agent-backend", backend);
+  syncAgentBackendFields(backend);
+  if (backend === "chatgpt-relay") {
+    $("metric-router").textContent = "ChatGPT Relay";
+    $("metric-router-detail").textContent = "ordinary ChatGPT worker chats";
+    badge($("router-badge"), "No router needed", "ok");
+  } else {
+    $("metric-router").textContent = router.reachable ? "9Router connected" : "9Router offline";
+    $("metric-router-detail").textContent = router.reachable ? `${(router.models || []).length} models` : (router.error || router.base_url || "Unavailable");
+    badge($("router-badge"), router.reachable ? "Connected" : "Offline", router.reachable ? "ok" : "bad");
+  }
   setInput("router-url", config.base_url || "");
   if (!ui.routerDirty) renderRouterModelControls(config, router);
 }
@@ -214,7 +229,8 @@ function renderAgents(state, slots) {
   if (document.activeElement !== $("agents-enabled")) $("agents-enabled").checked = globallyEnabled;
   $("agents-enabled-label").textContent = globallyEnabled ? "Enabled" : "Disabled";
   $("metric-agents").textContent = globallyEnabled ? `${enabled} available` : "Disabled";
-  $("metric-agents-detail").textContent = globallyEnabled ? `${busy} busy · ${slots.length} total` : "New delegation is blocked";
+  const backend = state.config?.agent_backend || "chatgpt-relay";
+  $("metric-agents-detail").textContent = globallyEnabled ? `${busy} busy · ${slots.length} total · ${backend}` : "New delegation is blocked";
   $("agent-slots").classList.toggle("paused", !globallyEnabled);
   $("agent-slots").innerHTML = slots.map((slot, index) => {
     const status = slot.busy ? "Busy" : !globallyEnabled ? "Paused" : slot.enabled ? "Ready" : "Off";
@@ -237,7 +253,7 @@ function renderRuns(runs) {
   node.innerHTML = runs.map((run) => {
     const identity = run.name || run.agent_id || "Temporary sub-agent";
     const role = run.role || "Role assigned by ChatGPT";
-    const active = run.status === "queued" || run.status === "running";
+    const active = ["queued", "waiting_worker", "running", "finishing"].includes(run.status);
     const detail = [run.slot_id, run.provider, run.model, run.requires_images ? "image verified" : "text", run.rtk ? "RTK" : "", run.caveman ? "Caveman" : ""].filter(Boolean).join(" · ");
     const output = run.error ? `Error: ${run.error}` : run.output || "";
     return `<article class="run-card"><div class="run-head"><div class="run-identity"><strong title="${esc(identity)}">${esc(identity)}</strong><small>${esc(role)}</small></div><div class="run-copy"><p title="${esc(run.task)}">${esc(run.task)}</p><small>${esc(run.activity || run.phase || "")}</small></div><div class="run-meta"><span class="badge ${stateClass(run.status)}">${esc(run.status)}</span>${active ? `<button class="button compact danger cancel-run" data-run="${esc(run.id)}" type="button">Cancel</button>` : ""}</div></div><div class="detail-strip run-detail"><code>${esc(detail)}</code><span>${esc(run.id)}</span></div>${output ? `<pre class="run-output">${esc(output)}</pre>` : ""}</article>`;
@@ -441,22 +457,29 @@ $("add-agent").addEventListener("click", async () => {
 $("router-form").addEventListener("input", () => { ui.routerDirty = true; });
 $("router-form").addEventListener("change", (event) => {
   ui.routerDirty = true;
+  if (event.target.id === "agent-backend") syncAgentBackendFields(event.target.value);
   if (event.target.classList.contains("router-model-option")) syncRouterDefaultOptions();
 });
 
 $("router-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const backend = $("agent-backend").value;
   const allowedModels = selectedRouterModels();
-  if (!allowedModels.length) {
-    notify("Select at least one allowed model.", true);
+  if (backend === "9router" && !allowedModels.length) {
+    notify("Select at least one allowed model for the legacy 9Router backend.", true);
     return;
   }
-  const body = { router_base_url: $("router-url").value.trim(), router_default_model: $("router-model").value, router_allowed_models: allowedModels };
+  const body = {
+    agent_backend: backend,
+    router_base_url: $("router-url").value.trim(),
+    router_default_model: $("router-model").value,
+    router_allowed_models: allowedModels,
+  };
   const key = $("router-key").value.trim();
   if (key) body.router_api_key = key;
   ui.routerDirty = false;
   try {
-    await mutate("/api/settings", { method: "PATCH", body }, "9Router settings saved.");
+    await mutate("/api/settings", { method: "PATCH", body }, backend === "chatgpt-relay" ? "ChatGPT relay enabled." : "Legacy 9Router settings saved.");
     $("router-key").value = "";
   } catch {
     ui.routerDirty = true;

@@ -267,9 +267,9 @@ func TestActivityWidgetV252LayoutAndInteractionContract(t *testing.T) {
 	}
 }
 
-func TestV281VersionAndWidgetRevision(t *testing.T) {
-	if appVersion != "2.8.1" {
-		t.Fatalf("appVersion=%q, want 2.8.1", appVersion)
+func TestV290VersionAndWidgetRevision(t *testing.T) {
+	if appVersion != "2.9.0" {
+		t.Fatalf("appVersion=%q, want 2.9.0", appVersion)
 	}
 	if activityWidgetURI != "ui://tautline/activity-v6.html" {
 		t.Fatalf("activityWidgetURI=%q, want the v6 widget resource", activityWidgetURI)
@@ -420,7 +420,7 @@ func TestSkillCacheKeyTracksSnapshot(t *testing.T) {
 
 func TestWorkflowInstructionsRequireSkillMatching(t *testing.T) {
 	instructions := codingWorkflowInstructions()
-	for _, expected := range []string{"skills_search creates and renders", "do not also call tautline_activity", "trivial status check", "prompt-boundary tools archive the previous monitor", "skills_search", "skill_view", "Before every non-trivial task", "never expose secret configuration values", "workspace_lookup", "mode=worktree", "base_ref", "read_many", "tautline_doctor", "exec_command", "write_stdin", "process session ID"} {
+	for _, expected := range []string{"skills_search creates and renders", "do not also call tautline_activity", "trivial status check", "prompt-boundary tools archive the previous monitor", "skills_search", "skill_view", "Before every non-trivial task", "never expose secret configuration values", "workspace_lookup", "mode=worktree", "base_ref", "read_many", "tautline_doctor", "exec_command", "write_stdin", "process session ID", "chatgpt-relay", "worker_prompt", "claim_agent_task", "complete_agent_task", "cannot create or send a consumer ChatGPT conversation automatically"} {
 		if !strings.Contains(instructions, expected) {
 			t.Fatalf("workflow instructions are missing %q", expected)
 		}

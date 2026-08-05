@@ -1,6 +1,6 @@
 # Security Policy
 
-Tautline can read and modify files, execute commands, delegate work to external model providers through 9Router, and expose a local MCP endpoint through a tunnel. Treat it as privileged development software.
+Tautline can read and modify files, execute commands, coordinate ordinary ChatGPT relay workers, optionally delegate to external model providers through legacy 9Router, and expose a local MCP endpoint through a tunnel. Treat it as privileged development software.
 
 ## Safe defaults
 
@@ -16,9 +16,10 @@ Tautline can read and modify files, execute commands, delegate work to external 
 - Managed worktrees can originate only from allowed Git repositories and are accepted or restored only inside `TAUTLINE_WORKTREE_ROOT`; they are an isolation boundary for workflow, not a security sandbox.
 - The dashboard binds to `127.0.0.1` and requires a local bootstrap-derived session.
 - Dashboard mutations require CSRF validation.
+- ChatGPT relay join codes are random and single-use. Private worker tokens remain in memory, are omitted from activity payloads, use constant-time comparison, and are cleared at terminal run states.
 - 9Router API keys are not included in dashboard state.
 - New sub-agent delegation can be disabled globally.
-- Requested and returned 9Router models must be present in the configured allowlist.
+- Requested and returned 9Router models must be present in the configured allowlist when the legacy backend is selected.
 - Runtime state, local environment files, secrets, logs, and binaries are ignored by Git.
 - Native Google Docs OAuth tokens remain under the configured runtime directory, are refreshed only through Google's OAuth endpoint, and are sent only to the Google Docs REST API.
 
@@ -27,7 +28,7 @@ Tautline can read and modify files, execute commands, delegate work to external 
 1. Never expose `/mcp` publicly with `TAUTLINE_REQUIRE_AUTH=false`.
 2. Use a unique random `TAUTLINE_OWNER_TOKEN` for every installation.
 3. Keep `TAUTLINE_ALLOWED_ROOTS` as narrow as possible. Do not use an entire system drive or home directory unless the risk is fully understood.
-4. Keep `TAUTLINE_9ROUTER_ALLOWED_MODELS` limited to models approved for delegated work.
+4. Keep `TAUTLINE_AGENT_BACKEND=chatgpt-relay` unless the legacy 9Router endpoint is intentionally required; then keep `TAUTLINE_9ROUTER_ALLOWED_MODELS` narrowly scoped.
 5. Keep `TAUTLINE_AGENT_ENABLED=false` when delegation is not required.
 6. Keep `TAUTLINE_WORKTREE_ROOT` inside a private, Tautline-owned directory and do not treat managed worktrees as a shell sandbox.
 7. Protect the machine running Tautline. OAuth does not protect against malware already running locally.
@@ -38,9 +39,9 @@ Tautline can read and modify files, execute commands, delegate work to external 
 
 ## Sub-agent and image data
 
-Delegated tasks are sent to the configured 9Router endpoint and may be processed by external model providers selected by that router. Review the provider's privacy and retention policy before sending sensitive material.
+With the default ChatGPT relay backend, Tautline stores the delegated task in memory and transfers it only when a separately opened ordinary ChatGPT conversation claims the one-time join code. The worker conversation is subject to the privacy, retention, plan limits, and account controls of ChatGPT. Do not paste a worker prompt into an untrusted account or share its one-time code.
 
-Image payloads are accepted only when the selected slot allows images, the request explicitly requires images, and model capability has been verified. Tautline does not intentionally persist in-memory image payloads to run state, configuration, logs, or runtime files, but this does not control retention by an external provider.
+The relay does not transfer images automatically; attach them manually in the intended worker chat. When the optional legacy 9Router backend is selected, delegated text or verified in-memory image payloads may be processed by external providers selected by that router. Review those providers' privacy and retention policies before sending sensitive material.
 
 ## Reporting a vulnerability
 
@@ -48,4 +49,4 @@ Open a private GitHub security advisory instead of a public issue. Include the a
 
 ## Supported versions
 
-Security fixes are applied to the latest release line. The currently documented public release is Tautline v2.8.1.
+Security fixes are applied to the latest release line. The currently documented public release is Tautline v2.9.0.

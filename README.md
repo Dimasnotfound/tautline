@@ -11,16 +11,16 @@
 
 <p align="center">
   <a href="https://github.com/Dimasnotfound/devspace-mcp/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/Dimasnotfound/devspace-mcp/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tautline version 2.8.1" src="https://img.shields.io/badge/version-2.8.1-38bdf8" />
+  <img alt="Tautline version 2.9.0" src="https://img.shields.io/badge/version-2.9.0-38bdf8" />
   <img alt="Go 1.25.5 or newer" src="https://img.shields.io/badge/Go-1.25.5%2B-00ADD8" />
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-818cf8" /></a>
 </p>
 
 ## Overview
 
-Tautline lets ChatGPT work with explicitly allowed local project folders without uploading an entire repository into a conversation. It provides bounded file and command tools, secure storage for large command output, a local dashboard, optional 9Router sub-agents, native Lightpanda browser tools, Cloudflare Tunnel support, and a generic MCP client that can republish tools from other MCP servers.
+Tautline lets ChatGPT work with explicitly allowed local project folders without uploading an entire repository into a conversation. It provides bounded file and command tools, secure storage for large command output, a local dashboard, ordinary ChatGPT relay workers, optional legacy 9Router agents, native Lightpanda browser tools, Cloudflare Tunnel support, and a generic MCP client that can republish tools from other MCP servers.
 
-Version 2.8.1 makes `skills_search` the prompt boundary for non-trivial turns, so a fresh activity widget and monitor are created even when the host does not call `tautline_activity` separately. Version 2.8.0 managed detached Git worktrees, pipe-backed process sessions, bounded diagnostics and reads, native Google Docs REST tools, Codex host guidance, ChatGPT OAuth compatibility, multi-transport external MCP integrations, and isolated Windows release preflight remain intact.
+Version 2.9.0 adds ChatGPT Relay Agents as the default sub-agent backend. A main conversation creates a task, the user opens an ordinary New Chat and pastes the returned worker prompt, and that conversation claims, performs, updates, and completes the task through Tautline. The relay uses no Codex process, OpenAI API model call, 9Router request, Chromium, Playwright, Selenium, or Electron automation. Existing prompt-scoped activity, managed worktrees, process sessions, diagnostics, native Google Docs, legacy 9Router support, and release preflight remain available.
 
 ## Main capabilities
 
@@ -33,7 +33,7 @@ Version 2.8.1 makes `skills_search` the prompt boundary for non-trivial turns, s
 | Activity monitor | Create one isolated live widget per user prompt, archive older monitors, and inspect or resume the latest activity. |
 | MCP integrations | Connect through `stdio`, Streamable HTTP, legacy SSE, or automatic HTTP-to-SSE fallback and republish tools with unique prefixes. |
 | Google Docs | Read and update documents through native Go tools backed by the stable Google Docs REST API, with local OAuth refresh and no Node.js runtime. |
-| Sub-agents | Delegate controlled tasks through an OpenAI-compatible 9Router endpoint with model and capability allowlists. |
+| Sub-agents | Delegate through ordinary ChatGPT relay worker conversations by default, with one-time join codes, private worker tokens, progress reporting, cancellation, timeouts, and optional legacy 9Router execution. |
 | Browser | Use Lightpanda native browser tools with optional persistent local session state. |
 | Dashboard | Configure integrations, agents, browser runtime, tunnel settings, and activity locally. |
 
@@ -44,7 +44,7 @@ Version 2.8.1 makes `skills_search` the prompt boundary for non-trivial turns, s
 - Node.js 22 or newer for JavaScript validation.
 - Git.
 - Windows PowerShell 5.1 or newer for embedding the application icon.
-- Optional: 9Router, Lightpanda through WSL2 or Docker, and `cloudflared`.
+- Optional: legacy 9Router, Lightpanda through WSL2 or Docker, and `cloudflared`. ChatGPT relay agents require no extra model runtime.
 
 ## Windows quick start
 
@@ -81,7 +81,7 @@ bin\tautline.exe
 
 The executable contains the current Tautline application icon. The optional Lightpanda bridge is created at `bin\lightpanda-shim.exe`.
 
-When replacing an older instance, double-click `SWITCH_TO_TAUTLINE.cmd`. It runs all quality gates, starts the staged v2.8.1 binary on an isolated temporary port, verifies native Google Docs activation, configured external MCP integrations, and a fresh ChatGPT OAuth connection flow, and only then stops the old runtime for an atomic handoff. If activation fails, the previous binaries are restored.
+When replacing an older instance, double-click `SWITCH_TO_TAUTLINE.cmd`. It runs all quality gates, starts the staged v2.9.0 binary on an isolated temporary port, verifies native Google Docs activation, configured external MCP integrations, and a fresh ChatGPT OAuth connection flow, and only then stops the old runtime for an atomic handoff. If activation fails, the previous binaries are restored.
 
 ## Existing local installation migration
 
@@ -108,7 +108,7 @@ Private files and all runtime state are excluded by `.gitignore`. Never commit t
 | Dashboard | `http://127.0.0.1:7688/` |
 | MCP | `http://127.0.0.1:7688/mcp` (existing apps) or `http://127.0.0.1:7688/mcp/v2` (fresh/cache-busting apps) |
 | Health | `http://127.0.0.1:7688/healthz` |
-| 9Router | `http://127.0.0.1:20128/v1` |
+| Legacy 9Router | `http://127.0.0.1:20128/v1` when `TAUTLINE_AGENT_BACKEND=9router` |
 | Lightpanda CDP | `http://127.0.0.1:9223` |
 | Runtime directory | `runtime/v2/` |
 | Activity widget | `ui://tautline/activity-v6.html` |
@@ -136,11 +136,18 @@ Copy [`.env.example`](.env.example) to `.env` or use `scripts/setup.ps1`. Import
 | `TAUTLINE_CODEX_INSTRUCTIONS` | Set to `off` to disable loading Codex `model_instructions_file`; enabled by default. |
 | `TAUTLINE_PUBLIC_BASE_URL` | Public HTTPS origin used by OAuth metadata. |
 | `TAUTLINE_WIDGET_DOMAIN` | Stable HTTPS origin declared for MCP Apps. |
-| `TAUTLINE_9ROUTER_ALLOWED_MODELS` | Comma-separated model allowlist for delegated tasks. |
+| `TAUTLINE_AGENT_BACKEND` | `chatgpt-relay` by default, or `9router` for the optional legacy model endpoint. |
+| `TAUTLINE_9ROUTER_ALLOWED_MODELS` | Comma-separated allowlist used only by the legacy `9router` backend. |
 | `TAUTLINE_LIGHTPANDA_PATH` | `auto`, `docker`, `wsl`, or an executable path. |
 | `TAUTLINE_TUNNEL_MODE` | `off`, `quick`, or `named`. |
 
 Dashboard changes are saved atomically to `runtime/v2/config/tautline.json`. Environment variables override stored configuration at startup.
+
+### ChatGPT Relay Agents
+
+The default `chatgpt-relay` backend coordinates work between ordinary ChatGPT conversations without making a model request itself. The main conversation calls `delegate_task`, receives a `worker_prompt`, and asks the user to open **New Chat** and paste that prompt. The worker conversation calls `claim_agent_task` with the one-time join code, performs the returned task with the returned workspace, reports meaningful progress through `update_agent_run`, and calls `complete_agent_task` exactly once before its final response. The main conversation can inspect the result through `get_agent_run` or cancel it through `cancel_agent_run`.
+
+Tautline cannot automatically create or send a consumer ChatGPT conversation through a supported server API. Therefore, opening the worker chat and sending the prompt is deliberately manual. The relay itself uses no Codex process, OpenAI API key, API model request, 9Router request, Chromium, Playwright, Selenium, or Electron automation. Join codes are random and single-use; the private worker token is kept in memory, omitted from activity payloads, checked in constant time, and cleared when the run completes, fails, times out, or is cancelled. Images are not transferred automatically and must be attached manually in the worker chat.
 
 ### Managed Git worktrees
 
@@ -244,7 +251,7 @@ Go builds for Tautline and the Lightpanda shim
 ├── .github/workflows/       # CI and secret scanning
 ├── assets/                  # Current Tautline logo and Windows icon
 ├── cmd/
-│   ├── tautline/            # Tautline v2.8.1 source and embedded web assets
+│   ├── tautline/            # Tautline v2.9.0 source and embedded web assets
 │   └── lightpanda-shim/     # Optional Windows-to-WSL Lightpanda shim
 ├── docs/                    # Setup and coding workflow guides
 ├── runtime/                 # Ignored machine-local state; only .gitkeep is tracked

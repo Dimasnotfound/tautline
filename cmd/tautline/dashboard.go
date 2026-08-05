@@ -26,6 +26,7 @@ type dashboardConfigView struct {
 	PublicBaseURL string           `json:"public_base_url,omitempty"`
 	WidgetDomain  string           `json:"widget_domain,omitempty"`
 	AgentEnabled  bool             `json:"agent_enabled"`
+	AgentBackend  string           `json:"agent_backend"`
 	Router        RouterConfigView `json:"router"`
 	Lightpanda    LightpandaConfig `json:"lightpanda"`
 	Tunnel        TunnelConfig     `json:"tunnel"`
@@ -64,6 +65,7 @@ type settingsUpdate struct {
 	RouterDefaultModel  *string   `json:"router_default_model"`
 	RouterAllowedModels *[]string `json:"router_allowed_models"`
 	AgentEnabled        *bool     `json:"agent_enabled"`
+	AgentBackend        *string   `json:"agent_backend"`
 	LightpandaPath      *string   `json:"lightpanda_path"`
 	LightpandaPort      *int      `json:"lightpanda_port"`
 	LightpandaObey      *bool     `json:"lightpanda_obey_robots"`
@@ -241,6 +243,7 @@ func (a *applicationRuntime) dashboardSnapshot() dashboardState {
 			PublicBaseURL: cfg.PublicBaseURL,
 			WidgetDomain:  cfg.WidgetDomain,
 			AgentEnabled:  cfg.AgentEnabled,
+			AgentBackend:  cfg.AgentBackend,
 			Router: RouterConfigView{
 				BaseURL:       cfg.Router.BaseURL,
 				APIKey:        maskedSecret(cfg.Router.APIKey),
@@ -289,6 +292,9 @@ func (a *applicationRuntime) handleSettings(w http.ResponseWriter, r *http.Reque
 		if input.AgentEnabled != nil {
 			cfg.AgentEnabled = *input.AgentEnabled
 		}
+		if input.AgentBackend != nil {
+			cfg.AgentBackend = strings.TrimSpace(*input.AgentBackend)
+		}
 		if input.LightpandaPath != nil {
 			cfg.Lightpanda.Executable = strings.TrimSpace(*input.LightpandaPath)
 		}
@@ -319,7 +325,9 @@ func (a *applicationRuntime) handleSettings(w http.ResponseWriter, r *http.Reque
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	go a.probeRouter(context.Background())
+	if a.config.snapshot().AgentBackend == agentBackend9Router {
+		go a.probeRouter(context.Background())
+	}
 	go a.lightpanda.probeRunner()
 	writeJSON(w, http.StatusOK, a.dashboardSnapshot())
 }

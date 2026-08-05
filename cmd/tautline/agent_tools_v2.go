@@ -15,16 +15,18 @@ type agentCapacityView struct {
 	Title         string       `json:"title"`
 	Summary       string       `json:"summary"`
 	Enabled       bool         `json:"enabled"`
-	DefaultModel  string       `json:"default_model"`
-	AllowedModels []string     `json:"allowed_models"`
+	Backend       string       `json:"backend"`
+	DefaultModel  string       `json:"default_model,omitempty"`
+	AllowedModels []string     `json:"allowed_models,omitempty"`
 	Slots         []AgentSlot  `json:"slots"`
 	Runs          []AgentRun   `json:"runs,omitempty"`
-	Router        RouterStatus `json:"router"`
+	Router        RouterStatus `json:"router,omitempty"`
 }
 
 type agentRunView struct {
-	Kind string   `json:"kind"`
-	Run  AgentRun `json:"run"`
+	Kind         string   `json:"kind"`
+	Run          AgentRun `json:"run"`
+	WorkerPrompt string   `json:"worker_prompt,omitempty"`
 }
 
 type browserToolView struct {
@@ -48,14 +50,14 @@ func registerAgentTools(s *server.MCPServer) {
 
 	delegateTool := mcp.NewTool("delegate_task",
 		mcp.WithTitleAnnotation("Delegate task"),
-		mcp.WithDescription("Start one asynchronous 9Router sub-agent task. Delegation must be globally enabled and the requested model must be in the dashboard allowlist returned by list_subagents. When model is omitted, Tautline uses the configured default allowed model. ChatGPT decides the temporary agent ID, name, role, and timeout. Use get_agent_run to inspect progress. Image tasks also require an enabled image slot, explicit model_supports_images=true, and an in-memory data:image URL."),
+		mcp.WithDescription("Create one asynchronous sub-agent run. The default chatgpt-relay backend returns a worker_prompt that the user pastes into a new ordinary ChatGPT conversation; that chat claims and completes the task through Tautline without Codex, API model calls, or browser automation. The legacy 9router backend remains optional. Use get_agent_run to inspect progress."),
 		mcp.WithString("task", mcp.Required(), mcp.Description("Complete delegated instruction")),
 		mcp.WithString("workspace_id", mcp.Description("Optional workspace_id previously returned by open_workspace; enables read-only workspace tools for the sub-agent")),
 		mcp.WithString("agent_id", mcp.Description("Temporary logical agent ID chosen by ChatGPT")),
 		mcp.WithString("name", mcp.Description("Temporary human-readable name chosen by ChatGPT")),
 		mcp.WithString("role", mcp.Description("Task-specific role chosen by ChatGPT")),
-		mcp.WithString("provider", mcp.Description("Provider label chosen by ChatGPT; execution is always routed through the configured 9Router endpoint")),
-		mcp.WithString("model", mcp.Description("9Router model identifier chosen by ChatGPT; defaults to the configured auto model")),
+		mcp.WithString("provider", mcp.Description("Optional provider label used only by the legacy 9router backend; ignored by chatgpt-relay")),
+		mcp.WithString("model", mcp.Description("Optional model identifier used only by the legacy 9router backend; ignored by chatgpt-relay")),
 		mcp.WithNumber("timeout_seconds", mcp.Description("Timeout chosen by ChatGPT, between 30 and 3600 seconds")),
 		mcp.WithBoolean("requires_images", mcp.Description("Whether this task consumes an image")),
 		mcp.WithBoolean("model_supports_images", mcp.Description("Explicit capability confirmation. Never infer this from a model name.")),
@@ -94,6 +96,47 @@ func registerAgentTools(s *server.MCPServer) {
 	)
 	s.AddTool(cancelTool, handleCancelAgentRun)
 
+	claimTool := mcp.NewTool("claim_agent_task",
+		mcp.WithTitleAnnotation("Claim ChatGPT relay task"),
+		mcp.WithDescription("Claim one pending chatgpt-relay task from a new ordinary ChatGPT conversation using the one-time join code in delegate_task.worker_prompt. Follow the returned instructions and keep worker_token private."),
+		mcp.WithString("join_code", mcp.Required(), mcp.Description("One-time join code copied from the main ChatGPT conversation")),
+		mcp.WithOutputSchema[agentWorkerAssignment](),
+		mcp.WithReadOnlyHintAnnotation(false),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(false),
+		mcp.WithOpenWorldHintAnnotation(false),
+	)
+	s.AddTool(claimTool, handleClaimAgentTask)
+
+	updateTool := mcp.NewTool("update_agent_run",
+		mcp.WithTitleAnnotation("Update ChatGPT relay progress"),
+		mcp.WithDescription("Update meaningful progress for the chatgpt-relay run claimed by this worker conversation. Never expose worker_token in user-visible text or files."),
+		mcp.WithString("run_id", mcp.Required(), mcp.Description("Run ID returned by claim_agent_task")),
+		mcp.WithString("worker_token", mcp.Required(), mcp.Description("Private worker token returned by claim_agent_task")),
+		mcp.WithString("activity", mcp.Required(), mcp.Description("Concise current activity")),
+		mcp.WithOutputSchema[agentRunView](),
+		mcp.WithReadOnlyHintAnnotation(false),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(false),
+		mcp.WithOpenWorldHintAnnotation(false),
+	)
+	s.AddTool(updateTool, handleUpdateAgentRun)
+
+	completeTool := mcp.NewTool("complete_agent_task",
+		mcp.WithTitleAnnotation("Complete ChatGPT relay task"),
+		mcp.WithDescription("Complete the chatgpt-relay task claimed by this worker conversation. Call exactly once before the worker's final response. Provide error only when the delegated task failed."),
+		mcp.WithString("run_id", mcp.Required(), mcp.Description("Run ID returned by claim_agent_task")),
+		mcp.WithString("worker_token", mcp.Required(), mcp.Description("Private worker token returned by claim_agent_task")),
+		mcp.WithString("output", mcp.Required(), mcp.Description("Bounded final result for the main ChatGPT conversation")),
+		mcp.WithString("error", mcp.Description("Optional failure message; omission marks the run completed")),
+		mcp.WithOutputSchema[agentRunView](),
+		mcp.WithReadOnlyHintAnnotation(false),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(false),
+		mcp.WithOpenWorldHintAnnotation(false),
+	)
+	s.AddTool(completeTool, handleCompleteAgentTask)
+
 	browserTool := mcp.NewTool("lightpanda_fetch",
 		mcp.WithTitleAnnotation("Fetch with Lightpanda"),
 		mcp.WithDescription("Render one public HTTP or HTTPS page using the configured Lightpanda binary. No Chrome fallback is used. Returned HTML stays in memory and is bounded."),
@@ -127,15 +170,18 @@ func handleListSubagents(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToo
 		summary = "Sub-agent delegation is disabled"
 	}
 	view := agentCapacityView{
-		Kind:          "subagents",
-		Title:         "Tautline sub-agents",
-		Summary:       summary,
-		Enabled:       cfg.AgentEnabled,
-		DefaultModel:  cfg.Router.DefaultModel,
-		AllowedModels: append([]string(nil), cfg.Router.AllowedModels...),
-		Slots:         slots,
-		Runs:          runs,
-		Router:        runtime.agents.routerStatusSnapshot(),
+		Kind:    "subagents",
+		Title:   "Tautline sub-agents",
+		Summary: summary,
+		Enabled: cfg.AgentEnabled,
+		Backend: cfg.AgentBackend,
+		Slots:   slots,
+		Runs:    runs,
+	}
+	if cfg.AgentBackend == agentBackend9Router {
+		view.DefaultModel = cfg.Router.DefaultModel
+		view.AllowedModels = append([]string(nil), cfg.Router.AllowedModels...)
+		view.Router = runtime.agents.routerStatusSnapshot()
 	}
 	return newToolResult("list_subagents", view, view, view.Summary), nil
 }
@@ -162,8 +208,16 @@ func handleDelegateTask(_ context.Context, req mcp.CallToolRequest) (*mcp.CallTo
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	view := agentRunView{Kind: "agent_run", Run: run}
-	fallback := fmt.Sprintf("Delegated %s to %s as %s using %s.", run.ID, run.SlotID, displayAgentName(run), run.Model)
-	return newToolResult("delegate_task", view, view, fallback), nil
+	if prompt, ok := runtime.agents.chatGPTRelayWorkerPrompt(run.ID); ok {
+		view.WorkerPrompt = prompt
+	}
+	fallback := fmt.Sprintf("Delegated %s to %s as %s using %s.", run.ID, run.SlotID, displayAgentName(run), run.Provider)
+	if view.WorkerPrompt != "" {
+		fallback += " Open a new ordinary ChatGPT conversation and paste worker_prompt to start it."
+	}
+	activityView := view
+	activityView.WorkerPrompt = ""
+	return newToolResult("delegate_task", view, activityView, fallback), nil
 }
 
 func handleGetAgentRun(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -176,7 +230,7 @@ func handleGetAgentRun(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 	if !ok {
 		return mcp.NewToolResultError("unknown agent run " + runID), nil
 	}
-	if argBool(req, "wait", false) && (run.Status == "queued" || run.Status == "running") {
+	if argBool(req, "wait", false) && isAgentRunActiveStatus(run.Status) {
 		seconds := argInt(req, "wait_seconds", 5)
 		if seconds < 1 {
 			seconds = 1
@@ -201,7 +255,7 @@ func handleGetAgentRun(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 					goto finished
 				}
 				run = candidate
-				if run.UpdatedAt.After(initial) || (run.Status != "queued" && run.Status != "running") {
+				if run.UpdatedAt.After(initial) || !isAgentRunActiveStatus(run.Status) {
 					goto finished
 				}
 			}
@@ -225,6 +279,65 @@ func handleCancelAgentRun(_ context.Context, req mcp.CallToolRequest) (*mcp.Call
 	run, _ := runtime.agents.getRun(runID)
 	view := agentRunView{Kind: "agent_run", Run: run}
 	return newToolResult("cancel_agent_run", view, view, "Cancelled agent run "+runID+"."), nil
+}
+
+func relayAgentToolError(toolName string, err error) *mcp.CallToolResult {
+	message := err.Error()
+	result := mcp.NewToolResultError(message)
+	result.Meta = mcp.NewMetaFromMap(map[string]any{
+		activityPendingMeta: map[string]any{
+			"payload": map[string]any{
+				"kind":    "agent_run",
+				"title":   "ChatGPT relay error",
+				"summary": message,
+				"status":  "error",
+				"tool":    toolName,
+			},
+			"fallback": message,
+		},
+	})
+	return result
+}
+
+func handleClaimAgentTask(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	runtime, err := currentApplicationRuntime()
+	if err != nil {
+		return relayAgentToolError("claim_agent_task", err), nil
+	}
+	assignment, err := runtime.agents.claimChatGPTRelayTask(argStr(req, "join_code"))
+	if err != nil {
+		return relayAgentToolError("claim_agent_task", err), nil
+	}
+	fallback := "Claimed ChatGPT relay task " + assignment.RunID + ". Keep worker_token private and complete the task before your final response."
+	activityAssignment := assignment
+	activityAssignment.WorkerToken = ""
+	return newToolResult("claim_agent_task", assignment, activityAssignment, fallback), nil
+}
+
+func handleUpdateAgentRun(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	runtime, err := currentApplicationRuntime()
+	if err != nil {
+		return relayAgentToolError("update_agent_run", err), nil
+	}
+	run, err := runtime.agents.updateChatGPTRelayTask(argStr(req, "run_id"), argStr(req, "worker_token"), argStr(req, "activity"))
+	if err != nil {
+		return relayAgentToolError("update_agent_run", err), nil
+	}
+	view := agentRunView{Kind: "agent_run", Run: run}
+	return newToolResult("update_agent_run", view, view, "Updated agent run "+run.ID+": "+run.Activity), nil
+}
+
+func handleCompleteAgentTask(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	runtime, err := currentApplicationRuntime()
+	if err != nil {
+		return relayAgentToolError("complete_agent_task", err), nil
+	}
+	run, err := runtime.agents.completeChatGPTRelayTask(argStr(req, "run_id"), argStr(req, "worker_token"), argStr(req, "output"), argStr(req, "error"))
+	if err != nil {
+		return relayAgentToolError("complete_agent_task", err), nil
+	}
+	view := agentRunView{Kind: "agent_run", Run: run}
+	return newToolResult("complete_agent_task", view, view, "Completed ChatGPT relay task "+run.ID+" with status "+run.Status+"."), nil
 }
 
 func handleLightpandaFetch(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

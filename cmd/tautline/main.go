@@ -222,6 +222,7 @@ func doStart(store *configStore, port, requestedTunnelMode string, openDashboard
 			"widget":            activityWidgetURI,
 			"tools":             len(mcpServer.ListTools()),
 			"subagents":         len(app.agents.slotsSnapshot()),
+			"agent_backend":     cfg.AgentBackend,
 			"mcp_clients":       app.mcpClients.summary(),
 			"google_docs":       googleDocsHealth(store),
 			"host_instructions": instructionStatus,
@@ -265,7 +266,7 @@ func doStart(store *configStore, port, requestedTunnelMode string, openDashboard
 	fmt.Printf("Dashboard: http://%s/\n", address)
 	fmt.Printf("Health: http://%s/healthz\n", address)
 	fmt.Printf("Allowed roots: %s\n", strings.Join(allowedRoots, ", "))
-	fmt.Printf("Sub-agent capacity: %d generic slots through 9Router\n", len(app.agents.slotsSnapshot()))
+	fmt.Printf("Sub-agent capacity: %d generic slots through %s\n", len(app.agents.slotsSnapshot()), cfg.AgentBackend)
 	fmt.Printf("Widget resource: %s\n", activityWidgetURI)
 	if openDashboard {
 		dashboardURL := fmt.Sprintf("http://%s/?admin=%s", address, app.adminKey)

@@ -37,13 +37,14 @@ Ponytail must not remove validation, required error handling, data-loss protecti
 1. Inspect `git status` and preserve unrelated changes.
 2. Search for exact symbols before reading large files.
 3. Reuse existing patterns and keep edits local to the owning component.
-4. Run checks justified by the change:
+4. For `chatgpt-relay` worker chats, claim only the supplied one-time code, keep `worker_token` private, perform only the returned task, and call `complete_agent_task` exactly once before the final response.
+5. Run checks justified by the change:
    - Go: format modified files, then run `go test -count=1 ./...` and `go vet ./...`.
    - Dashboard JavaScript: run `node --check cmd/tautline/web/app.js` and relevant Go tests.
    - Python: syntax-check modified files and run relevant Go tests.
    - Documentation only: run `git diff --check`.
    - Release or cross-platform changes: run `./scripts/build.ps1` on Windows or `./scripts/build.sh` on macOS/Linux.
-5. After the final file modification, call `show_changes` exactly once.
+6. After the final file modification, call `show_changes` exactly once.
 
 Do not claim a check passed when it was skipped or failed.
 
