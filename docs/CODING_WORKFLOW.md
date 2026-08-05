@@ -1,10 +1,10 @@
 # Context-safe coding workflow
 
-Tautline v2.8.0 uses one new prompt-scoped activity monitor per user turn, managed checkout or worktree workspaces, and bounded single-call or interactive command execution. Multi-file reads, read-only diagnostics, native Google Docs REST tools, Codex host guidance, multi-transport MCP support, and isolated release preflight continue to protect the active runtime.
+Tautline v2.8.1 creates one new prompt-scoped activity monitor at the first prompt-boundary tool in each user turn, while retaining managed checkout or worktree workspaces and bounded single-call or interactive command execution. Multi-file reads, read-only diagnostics, native Google Docs REST tools, Codex host guidance, multi-transport MCP support, and isolated release preflight continue to protect the active runtime.
 
 ## 1. Start one monitor per user turn
 
-At the beginning of every user turn that uses MyLocal or Tautline, call `tautline_activity` exactly once before any other Tautline tool. Call it even when the conversation already contains older Tautline widgets, but never call it more than once in the same user turn. The call creates a unique prompt monitor and archives the monitor from the previous prompt.
+For every non-trivial user turn that uses MyLocal or Tautline, call `skills_search` exactly once before any other Tautline tool. It creates and renders a unique prompt monitor before recording the skill search, so do not also call `tautline_activity` in that turn. For a trivial status check or direct workspace request that legitimately skips skill matching, call `tautline_activity` exactly once before other Tautline tools. Either prompt-boundary call archives the monitor from the previous prompt.
 
 ## 2. Reuse an existing checkout
 
@@ -57,6 +57,6 @@ After the final file modification, call `show_changes` exactly once. Use the res
 
 ## Activity monitor behavior
 
-`tautline_activity` is the only render tool. Each call returns a unique `monitor_id` for one user prompt. The widget sends that identifier to the app-only `activity_snapshot` tool on every poll, preventing an older widget from reading another prompt's activity. When the next prompt starts, the previous monitor becomes archived and its widget stops polling automatically. Archived timelines remain inspectable.
+`skills_search` is the render and prompt-boundary tool for non-trivial turns, while `tautline_activity` provides the same boundary for trivial or direct turns that skip skill matching. Each call returns a unique `monitor_id` for one user prompt. The widget sends that identifier to the app-only `activity_snapshot` tool on every poll, preventing an older widget from reading another prompt's activity. When the next prompt starts, the previous monitor becomes archived and its widget stops polling automatically. Archived timelines remain inspectable.
 
 Selecting an older event pins the inspector to that event while new activity continues to arrive in the active prompt monitor. The **Latest** button clears the pinned selection, scrolls the timeline to the newest event, and resumes automatic tracking. `open_workspace`, `workspace_lookup`, and every workspace, command, skill, agent, browser, or external-MCP action remain data-only.

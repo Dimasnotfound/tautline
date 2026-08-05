@@ -251,16 +251,19 @@ var (
 func registerSkillTools(s *server.MCPServer) {
 	searchTool := mcp.NewTool("skills_search",
 		mcp.WithTitleAnnotation("Search Hermes skills"),
-		mcp.WithDescription("Search the installed Hermes Agent skills using its read-only loader. For every non-trivial task, call this first with the user's resolved request, then load relevant compatible results with skill_view before using workspace tools."),
+		mcp.WithDescription("Search the installed Hermes Agent skills using its read-only loader. For every non-trivial task, call this first with the user's resolved request. The call also creates and renders the prompt monitor, so do not call tautline_activity in the same user turn."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("The user's complete task or a precise description of the expertise needed")),
 		mcp.WithNumber("limit", mcp.Description("Maximum results, default 5 and maximum 12")),
 		mcp.WithBoolean("include_incompatible", mcp.Description("Include skills excluded by platform, environment, or available-tool filters")),
 		mcp.WithOutputSchema[skillSearchView](),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithDestructiveHintAnnotation(false),
-		mcp.WithIdempotentHintAnnotation(true),
+		mcp.WithIdempotentHintAnnotation(false),
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
+	if activeWidgetMode != widgetModeOff {
+		setWidgetMeta(&searchTool, activityWidgetURI, "Opening prompt monitor", "Prompt monitor ready")
+	}
 	s.AddTool(searchTool, handleSkillsSearch)
 
 	viewTool := mcp.NewTool("skill_view",

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -13,14 +14,15 @@ import (
 )
 
 const (
-	activityRecordedMeta = "tautline/activityRecorded"
-	activityPendingMeta  = "tautline/activityPending"
-	activityLimit        = 64
-	activityMonitorLimit = 64
-	activitySnapshotSize = 28
-	activityPayloadBytes = 64 * 1024
-	activityTextBytes    = 40 * 1024
-	activityArrayItems   = 40
+	activityRecordedMeta  = "tautline/activityRecorded"
+	activityPendingMeta   = "tautline/activityPending"
+	activityBootstrapMeta = "tautline/activityBootstrap"
+	activityLimit         = 64
+	activityMonitorLimit  = 64
+	activitySnapshotSize  = 28
+	activityPayloadBytes  = 64 * 1024
+	activityTextBytes     = 40 * 1024
+	activityArrayItems    = 40
 )
 
 type activityEvent struct {
@@ -97,6 +99,22 @@ func (store *activityStore) startMonitor(workspaceID string) string {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	return store.startMonitorLocked(workspaceID).ID
+}
+
+func (store *activityStore) startPromptMonitor() activityBootstrapView {
+	view := activityBootstrapView{
+		Kind:    "activity_bootstrap",
+		Title:   "Tautline prompt activity",
+		Summary: "A new activity monitor was created for this prompt. Open a workspace to begin tracking local work.",
+	}
+	if state, found := defaultWorkspace(); found {
+		view.Summary = "A new prompt activity monitor was created for " + filepath.Base(state.Root) + "."
+		view.WorkspaceID = state.ID
+		view.Path = state.Root
+		view.Ready = true
+	}
+	view.MonitorID = store.startMonitor(view.WorkspaceID)
+	return view
 }
 
 func (store *activityStore) startMonitorLocked(workspaceID string) *activityMonitor {
@@ -186,9 +204,18 @@ func activityMiddleware(store *activityStore) server.ToolHandlerMiddleware {
 			if store == nil || isInternalActivityTool(request.Params.Name) {
 				return next(ctx, request)
 			}
-			monitorID := store.captureActiveMonitorID()
+			var monitorID string
+			var bootstrap *activityBootstrapView
+			if request.Params.Name == "skills_search" {
+				view := store.startPromptMonitor()
+				monitorID = view.MonitorID
+				bootstrap = &view
+			} else {
+				monitorID = store.captureActiveMonitorID()
+			}
 			result, err := next(ctx, request)
 			if consumeActivityMarker(result) {
+				attachActivityBootstrap(result, bootstrap)
 				return result, err
 			}
 			payload, fallback, pending := consumePendingActivity(result)
@@ -196,8 +223,35 @@ func activityMiddleware(store *activityStore) server.ToolHandlerMiddleware {
 				payload, fallback = activityCallPayload(request, result, err)
 			}
 			store.recordForMonitor(monitorID, request.Params.Name, payload, fallback, err != nil || result != nil && result.IsError)
+			attachActivityBootstrap(result, bootstrap)
 			return result, err
 		}
+	}
+}
+
+func attachActivityBootstrap(result *mcp.CallToolResult, bootstrap *activityBootstrapView) {
+	if result == nil || bootstrap == nil {
+		return
+	}
+	fields := map[string]any{
+		activityBootstrapMeta: *bootstrap,
+		"kind":                bootstrap.Kind,
+		"title":               bootstrap.Title,
+		"summary":             bootstrap.Summary,
+		"monitorId":           bootstrap.MonitorID,
+		"workspaceId":         bootstrap.WorkspaceID,
+		"path":                bootstrap.Path,
+		"ready":               bootstrap.Ready,
+	}
+	if result.Meta == nil {
+		result.Meta = mcp.NewMetaFromMap(fields)
+		return
+	}
+	if result.Meta.AdditionalFields == nil {
+		result.Meta.AdditionalFields = make(map[string]any)
+	}
+	for key, value := range fields {
+		result.Meta.AdditionalFields[key] = value
 	}
 }
 

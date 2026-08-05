@@ -152,7 +152,7 @@ type commandView struct {
 func registerTools(s *server.MCPServer) {
 	activityLauncher := mcp.NewTool("tautline_activity",
 		mcp.WithTitleAnnotation("Start prompt activity"),
-		mcp.WithDescription("Mount one new prompt-scoped Tautline activity widget. Call this exactly once at the beginning of every user turn that uses Tautline, before any other Tautline tool, even when older widgets already exist. Never call it more than once in the same user turn. Starting a new prompt monitor archives the previous monitor and performs no file changes."),
+		mcp.WithDescription("Mount one new prompt-scoped Tautline activity widget for a trivial status check or direct workspace turn that legitimately skips skills_search. Call this exactly once before other Tautline tools in that turn. Do not call it when skills_search already created the prompt monitor. Starting a new monitor archives the previous prompt and performs no file changes."),
 		mcp.WithOutputSchema[activityBootstrapView](),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithDestructiveHintAnnotation(false),
@@ -370,19 +370,7 @@ func handleTautlineActivity(_ context.Context, _ mcp.CallToolRequest) (*mcp.Call
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	view := activityBootstrapView{
-		Kind:    "activity_bootstrap",
-		Title:   "Tautline prompt activity",
-		Summary: "A new activity monitor was created for this prompt. Open a workspace to begin tracking local work.",
-		Ready:   false,
-	}
-	if state, found := defaultWorkspace(); found {
-		view.Summary = "A new prompt activity monitor was created for " + filepath.Base(state.Root) + "."
-		view.WorkspaceID = state.ID
-		view.Path = state.Root
-		view.Ready = true
-	}
-	view.MonitorID = runtime.activity.startMonitor(view.WorkspaceID)
+	view := runtime.activity.startPromptMonitor()
 	return mcp.NewToolResultStructured(view, view.Summary), nil
 }
 

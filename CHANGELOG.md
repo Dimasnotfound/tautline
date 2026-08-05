@@ -2,6 +2,18 @@
 
 All notable changes to Tautline are documented here.
 
+## [2.8.1] - 2026-08-05
+
+### Fixed
+
+- `skills_search` now starts and renders a fresh prompt monitor before recording its own event, so a skipped standalone `tautline_activity` call cannot route new work into the previous prompt's widget.
+- Prompt bootstrap fields are attached to the `skills_search` response metadata, allowing the rendered app to bind immediately to the new `monitor_id`.
+
+### Changed
+
+- `skills_search` is the prompt-boundary tool for non-trivial turns, while `tautline_activity` remains the explicit fallback for trivial status checks and direct workspace turns that skip skill matching.
+- Advanced the widget resource to `ui://tautline/activity-v6.html` to invalidate cached v5 tool and widget metadata.
+
 ## [2.8.0] - 2026-08-05
 
 ### Added

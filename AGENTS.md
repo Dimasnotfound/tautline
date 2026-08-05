@@ -20,7 +20,7 @@ Keep generated output and machine-local state out of source changes. Read the re
 
 For every non-trivial implementation, bug fix, refactor, review, or architecture task:
 
-1. Call `skills_search` exactly once with the complete resolved request before using workspace tools.
+1. For a non-trivial turn, call `skills_search` exactly once with the complete resolved request before using workspace tools. That call also creates the prompt activity widget, so do not call `tautline_activity` in the same turn. For a trivial status check or direct workspace request that skips skill matching, call `tautline_activity` once before other Tautline tools.
 2. Load `software-development/ponytail` with `skill_view`, even when another skill ranks first.
 3. Use Ponytail at `full` intensity unless the user explicitly requests `lite` or `ultra`.
 4. Follow its ladder: question the need, prefer the Go standard library, prefer native platform behavior, reuse existing dependencies, and write only the minimum code that works.

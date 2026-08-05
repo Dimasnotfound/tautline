@@ -1,4 +1,4 @@
-# Connect Tautline v2.8.0 to ChatGPT
+# Connect Tautline v2.8.1 to ChatGPT
 
 Tautline listens on `127.0.0.1:7688` by default. ChatGPT requires a stable HTTPS origin that forwards to the local MCP endpoint.
 
@@ -70,10 +70,10 @@ Complete the owner authorization flow with the private token stored in `.env` or
 
 ## 5. Verify the activity monitor
 
-After reconnecting the plugin, send a MyLocal request. At the beginning of every user turn that uses Tautline, the server instructions make ChatGPT call `tautline_activity` exactly once before other Tautline tools. The call renders:
+After reconnecting the plugin, send a MyLocal request. For every non-trivial user turn that uses Tautline, the server instructions make ChatGPT call `skills_search` exactly once before other Tautline tools. That call creates the prompt monitor and renders the widget. For a trivial status check or direct workspace request that skips skill matching, `tautline_activity` provides the same prompt boundary. The two tools must not be called in the same turn. The rendered resource is:
 
 ```text
-ui://tautline/activity-v5.html
+ui://tautline/activity-v6.html
 ```
 
 Starting the local executable alone cannot open an iframe because widget rendering is initiated by a ChatGPT tool call. Each rendered widget receives a unique prompt `monitor_id`. When the next prompt begins, the previous widget becomes archived and stops automatic polling, so it cannot show activity from later prompts. Use `workspace_lookup` before `open_workspace`; both tools and all later workspace, command, browser, skill, agent, and external-MCP calls remain data-only. Use the widget's **Latest** button to return from an older selected event to live tracking.
@@ -103,7 +103,7 @@ An existing `docsmcp.googleapis.com` connector is migrated automatically into th
 ## Troubleshooting
 
 - Run `bin\tautline.exe -doctor` first for a read-only summary and concrete corrective actions.
-- Confirm `healthz` reports service `Tautline`, version `2.8.0`, the published tool count, 9Router status, and `google_docs.mode` as `native-rest` when Google Docs is enabled.
+- Confirm `healthz` reports service `Tautline`, version `2.8.1`, the published tool count, 9Router status, and `google_docs.mode` as `native-rest` when Google Docs is enabled.
 - Confirm the tunnel forwards to port `7688`.
 - Confirm the public base URL and widget domain contain only the HTTPS origin.
 - Confirm canonical Protected Resource Metadata returns `/mcp`, versioned metadata returns `/mcp/v2`, and both advertise `tautline offline_access`.

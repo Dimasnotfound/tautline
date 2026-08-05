@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -255,7 +256,7 @@ func TestActivityWidgetV252LayoutAndInteractionContract(t *testing.T) {
 		"latestButton.addEventListener(\"click\", followLatest)",
 	} {
 		if !strings.Contains(html, required) {
-			t.Fatalf("activity-v5 widget contract is missing %q", required)
+			t.Fatalf("activity-v6 widget contract is missing %q", required)
 		}
 	}
 
@@ -266,12 +267,12 @@ func TestActivityWidgetV252LayoutAndInteractionContract(t *testing.T) {
 	}
 }
 
-func TestV280VersionAndWidgetRevision(t *testing.T) {
-	if appVersion != "2.8.0" {
-		t.Fatalf("appVersion=%q, want 2.8.0", appVersion)
+func TestV281VersionAndWidgetRevision(t *testing.T) {
+	if appVersion != "2.8.1" {
+		t.Fatalf("appVersion=%q, want 2.8.1", appVersion)
 	}
-	if activityWidgetURI != "ui://tautline/activity-v5.html" {
-		t.Fatalf("activityWidgetURI=%q, want the v5 widget resource", activityWidgetURI)
+	if activityWidgetURI != "ui://tautline/activity-v6.html" {
+		t.Fatalf("activityWidgetURI=%q, want the v6 widget resource", activityWidgetURI)
 	}
 }
 
@@ -419,7 +420,7 @@ func TestSkillCacheKeyTracksSnapshot(t *testing.T) {
 
 func TestWorkflowInstructionsRequireSkillMatching(t *testing.T) {
 	instructions := codingWorkflowInstructions()
-	for _, expected := range []string{"tautline_activity", "beginning of every user turn", "never call it more than once in the same user turn", "prompt-scoped activity widget", "archives the monitor from the previous prompt", "skills_search", "skill_view", "Before every non-trivial task", "never expose secret configuration values", "workspace_lookup", "mode=worktree", "base_ref", "read_many", "tautline_doctor", "exec_command", "write_stdin", "process session ID"} {
+	for _, expected := range []string{"skills_search creates and renders", "do not also call tautline_activity", "trivial status check", "prompt-boundary tools archive the previous monitor", "skills_search", "skill_view", "Before every non-trivial task", "never expose secret configuration values", "workspace_lookup", "mode=worktree", "base_ref", "read_many", "tautline_doctor", "exec_command", "write_stdin", "process session ID"} {
 		if !strings.Contains(instructions, expected) {
 			t.Fatalf("workflow instructions are missing %q", expected)
 		}
@@ -533,13 +534,14 @@ func TestParseWidgetMode(t *testing.T) {
 	}
 }
 
-func TestOnlyTautlineActivityOwnsWidgetMetadata(t *testing.T) {
+func TestPromptBoundaryToolsOwnWidgetMetadata(t *testing.T) {
 	previousMode := activeWidgetMode
 	activeWidgetMode = widgetModeOn
 	t.Cleanup(func() { activeWidgetMode = previousMode })
 
 	mcpServer := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(true))
 	registerTools(mcpServer)
+	registerSkillTools(mcpServer)
 	tools := mcpServer.ListTools()
 	widgetTools := []string{}
 	for name, entry := range tools {
@@ -552,17 +554,27 @@ func TestOnlyTautlineActivityOwnsWidgetMetadata(t *testing.T) {
 		}
 	}
 	sort.Strings(widgetTools)
-	if len(widgetTools) != 1 || widgetTools[0] != "tautline_activity" {
-		t.Fatalf("widget tools=%v, want only tautline_activity", widgetTools)
+	if !reflect.DeepEqual(widgetTools, []string{"skills_search", "tautline_activity"}) {
+		t.Fatalf("widget tools=%v, want skills_search and tautline_activity", widgetTools)
 	}
 	launcher, exists := tools["tautline_activity"]
 	if !exists {
 		t.Fatal("tautline_activity tool is missing")
 	}
 	encodedLauncher, _ := json.Marshal(launcher.Tool)
-	for _, marker := range []string{activityWidgetURI, "openai/widgetAccessible", "resourceUri", "prompt-scoped", "same user turn"} {
+	for _, marker := range []string{activityWidgetURI, "openai/widgetAccessible", "resourceUri", "prompt-scoped", "skips skills_search"} {
 		if !strings.Contains(string(encodedLauncher), marker) {
 			t.Fatalf("tautline_activity metadata is missing %q: %s", marker, encodedLauncher)
+		}
+	}
+	skillLauncher, exists := tools["skills_search"]
+	if !exists {
+		t.Fatal("skills_search tool is missing")
+	}
+	encodedSkillLauncher, _ := json.Marshal(skillLauncher.Tool)
+	for _, marker := range []string{activityWidgetURI, "openai/widgetAccessible", "resourceUri", "prompt monitor"} {
+		if !strings.Contains(string(encodedSkillLauncher), marker) {
+			t.Fatalf("skills_search metadata is missing %q: %s", marker, encodedSkillLauncher)
 		}
 	}
 	openTool, exists := tools["open_workspace"]

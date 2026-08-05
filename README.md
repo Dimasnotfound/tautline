@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/Dimasnotfound/devspace-mcp/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/Dimasnotfound/devspace-mcp/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tautline version 2.8.0" src="https://img.shields.io/badge/version-2.8.0-38bdf8" />
+  <img alt="Tautline version 2.8.1" src="https://img.shields.io/badge/version-2.8.1-38bdf8" />
   <img alt="Go 1.25.5 or newer" src="https://img.shields.io/badge/Go-1.25.5%2B-00ADD8" />
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-818cf8" /></a>
 </p>
@@ -20,7 +20,7 @@
 
 Tautline lets ChatGPT work with explicitly allowed local project folders without uploading an entire repository into a conversation. It provides bounded file and command tools, secure storage for large command output, a local dashboard, optional 9Router sub-agents, native Lightpanda browser tools, Cloudflare Tunnel support, and a generic MCP client that can republish tools from other MCP servers.
 
-Version 2.8.0 adds managed detached Git worktree workspaces for isolated or parallel changes and pipe-backed process sessions for long-running commands, incremental output polling, stdin, interruption, and process-tree termination. The 2.7.2 doctor and bounded `read_many` additions, prompt-level activity isolation, native Google Docs REST tools, Codex host guidance, ChatGPT OAuth compatibility, multi-transport external MCP integrations, and isolated Windows release preflight remain intact.
+Version 2.8.1 makes `skills_search` the prompt boundary for non-trivial turns, so a fresh activity widget and monitor are created even when the host does not call `tautline_activity` separately. Version 2.8.0 managed detached Git worktrees, pipe-backed process sessions, bounded diagnostics and reads, native Google Docs REST tools, Codex host guidance, ChatGPT OAuth compatibility, multi-transport external MCP integrations, and isolated Windows release preflight remain intact.
 
 ## Main capabilities
 
@@ -81,7 +81,7 @@ bin\tautline.exe
 
 The executable contains the current Tautline application icon. The optional Lightpanda bridge is created at `bin\lightpanda-shim.exe`.
 
-When replacing an older instance, double-click `SWITCH_TO_TAUTLINE.cmd`. It runs all quality gates, starts the staged v2.8.0 binary on an isolated temporary port, verifies native Google Docs activation, configured external MCP integrations, and a fresh ChatGPT OAuth connection flow, and only then stops the old runtime for an atomic handoff. If activation fails, the previous binaries are restored.
+When replacing an older instance, double-click `SWITCH_TO_TAUTLINE.cmd`. It runs all quality gates, starts the staged v2.8.1 binary on an isolated temporary port, verifies native Google Docs activation, configured external MCP integrations, and a fresh ChatGPT OAuth connection flow, and only then stops the old runtime for an atomic handoff. If activation fails, the previous binaries are restored.
 
 ## Existing local installation migration
 
@@ -111,7 +111,7 @@ Private files and all runtime state are excluded by `.gitignore`. Never commit t
 | 9Router | `http://127.0.0.1:20128/v1` |
 | Lightpanda CDP | `http://127.0.0.1:9223` |
 | Runtime directory | `runtime/v2/` |
-| Activity widget | `ui://tautline/activity-v5.html` |
+| Activity widget | `ui://tautline/activity-v6.html` |
 
 Run a read-only local diagnostic at any time:
 
@@ -163,10 +163,10 @@ At startup, Tautline checks `$CODEX_HOME/config.toml`, or `%USERPROFILE%\.codex\
 Tautline registers one reusable MCP App resource:
 
 ```text
-ui://tautline/activity-v5.html
+ui://tautline/activity-v6.html
 ```
 
-Only `tautline_activity` owns the output template. The server instructions direct ChatGPT to call it exactly once at the beginning of every user turn that uses Tautline, even when an older widget already exists. Each call creates a unique `monitor_id`. `open_workspace`, `workspace_lookup`, and every other tool remain data-only, while the app-only `activity_snapshot` requires the widget's `monitor_id`.
+For non-trivial turns, `skills_search` owns the output template and creates a unique prompt `monitor_id` before recording its own activity. This guarantees a fresh widget even when the host skips a separate launcher call. For a trivial status check or direct workspace request that skips skill matching, `tautline_activity` remains the explicit prompt launcher. The two tools must not be called in the same user turn. `open_workspace`, `workspace_lookup`, and every other tool remain data-only, while the app-only `activity_snapshot` requires the widget's `monitor_id`.
 
 Only the newest prompt monitor receives new events. When another prompt begins, the previous monitor becomes archived and its widget stops automatic polling. Archived widgets remain usable for inspecting their existing timeline, but they cannot display activity from later prompts. The **Latest** button exits a pinned historical selection, returns the timeline to the newest event, and resumes automatic tracking while the monitor is active.
 
@@ -244,7 +244,7 @@ Go builds for Tautline and the Lightpanda shim
 ├── .github/workflows/       # CI and secret scanning
 ├── assets/                  # Current Tautline logo and Windows icon
 ├── cmd/
-│   ├── tautline/            # Tautline v2.8.0 source and embedded web assets
+│   ├── tautline/            # Tautline v2.8.1 source and embedded web assets
 │   └── lightpanda-shim/     # Optional Windows-to-WSL Lightpanda shim
 ├── docs/                    # Setup and coding workflow guides
 ├── runtime/                 # Ignored machine-local state; only .gitkeep is tracked

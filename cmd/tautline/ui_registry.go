@@ -12,7 +12,7 @@ import (
 
 const (
 	widgetMIMEType    = "text/html;profile=mcp-app"
-	activityWidgetURI = "ui://tautline/activity-v5.html"
+	activityWidgetURI = "ui://tautline/activity-v6.html"
 )
 
 type widgetResourceDefinition struct {

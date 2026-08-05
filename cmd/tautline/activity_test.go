@@ -85,6 +85,42 @@ func TestActivityMiddlewareSkipsInternalMonitorTools(t *testing.T) {
 	}
 }
 
+func TestSkillsSearchStartsNewPromptMonitorAndBootstrapsWidget(t *testing.T) {
+	isolateWorkspaceRegistry(t, nil)
+	store := newActivityStore()
+	previousID := store.startMonitor("")
+	store.record("read", map[string]any{"kind": "file", "path": "old.go"}, "old prompt", false)
+
+	handler := activityMiddleware(store)(func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return newToolResult("skills_search", map[string]any{"kind": "skills_search"}, map[string]any{
+			"kind":    "skills_search",
+			"title":   "Skills matched",
+			"summary": "5 skills",
+		}, "5 skills"), nil
+	})
+	result, err := handler(context.Background(), toolRequest("skills_search", map[string]any{"query": "debug widget"}))
+	if err != nil || result == nil || result.IsError {
+		t.Fatalf("skills_search failed: result=%+v err=%v", result, err)
+	}
+
+	previous := mustActivitySnapshot(t, store, previousID, "")
+	if previous.Active || len(previous.Events) != 1 || previous.Events[0].Path != "old.go" {
+		t.Fatalf("previous prompt monitor was not archived intact: %+v", previous)
+	}
+	if result.Meta == nil || result.Meta.AdditionalFields == nil {
+		t.Fatalf("skills_search result has no widget bootstrap metadata: %+v", result.Meta)
+	}
+	bootstrap := decodeStructuredResult[activityBootstrapView](t, result.Meta.AdditionalFields[activityBootstrapMeta])
+	metadata := decodeStructuredResult[activityBootstrapView](t, result.Meta.AdditionalFields)
+	if bootstrap.MonitorID == "" || bootstrap.MonitorID == previousID || metadata.MonitorID != bootstrap.MonitorID || metadata.Kind != "activity_bootstrap" {
+		t.Fatalf("skills_search did not expose a new prompt monitor bootstrap: nested=%+v metadata=%+v", bootstrap, metadata)
+	}
+	current := mustActivitySnapshot(t, store, bootstrap.MonitorID, "")
+	if !current.Active || len(current.Events) != 1 || current.Events[0].Tool != "skills_search" {
+		t.Fatalf("skills_search was not recorded in the new prompt monitor: %+v", current)
+	}
+}
+
 func TestActivityStoreIsolatesPromptMonitors(t *testing.T) {
 	store := newActivityStore()
 	firstID := store.startMonitor("ws_alpha")

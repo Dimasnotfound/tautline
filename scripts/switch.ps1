@@ -12,7 +12,7 @@ $Root = Split-Path -Parent $PSScriptRoot
 $BuildScript = Join-Path $PSScriptRoot "build.ps1"
 $StartScript = Join-Path $PSScriptRoot "start.ps1"
 $EnvPath = Join-Path $Root ".env"
-$ExpectedVersion = "2.8.0"
+$ExpectedVersion = "2.8.1"
 
 $Binary = Join-Path $Root "bin\tautline.exe"
 $Shim = Join-Path $Root "bin\lightpanda-shim.exe"
