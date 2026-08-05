@@ -52,6 +52,7 @@ type dashboardState struct {
 	AllowedRoots []string            `json:"allowed_roots"`
 	Config       dashboardConfigView `json:"config"`
 	Router       RouterStatus        `json:"router"`
+	RelayBridge  relayBridgeStatus   `json:"relay_bridge"`
 	Lightpanda   LightpandaStatus    `json:"lightpanda"`
 	Tunnel       TunnelStatus        `json:"tunnel"`
 	MCPServers   []ExternalMCPStatus `json:"mcp_servers"`
@@ -253,12 +254,13 @@ func (a *applicationRuntime) dashboardSnapshot() dashboardState {
 			Lightpanda: cfg.Lightpanda,
 			Tunnel:     cfg.Tunnel,
 		},
-		Router:     a.agents.routerStatusSnapshot(),
-		Lightpanda: a.lightpanda.status(),
-		Tunnel:     tunnel,
-		MCPServers: a.mcpClients.statuses(),
-		Slots:      sortedAgentSlots(a.agents.slotsSnapshot()),
-		Runs:       a.agents.runsSnapshot(),
+		Router:      a.agents.routerStatusSnapshot(),
+		RelayBridge: a.relayBridge.status(),
+		Lightpanda:  a.lightpanda.status(),
+		Tunnel:      tunnel,
+		MCPServers:  a.mcpClients.statuses(),
+		Slots:       sortedAgentSlots(a.agents.slotsSnapshot()),
+		Runs:        a.agents.runsSnapshot(),
 	}
 }
 
@@ -516,6 +518,7 @@ func (a *applicationRuntime) handleRunItem(w http.ResponseWriter, r *http.Reques
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	a.relayBridge.markRun(parts[0], "cancelled")
 	run, _ := a.agents.getRun(parts[0])
 	writeJSON(w, http.StatusOK, run)
 }

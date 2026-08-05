@@ -18,7 +18,10 @@ if [ -n "$UNFORMATTED" ]; then
 fi
 
 python -c "import ast,pathlib; ast.parse(pathlib.Path('cmd/tautline/hermes_skill_bridge.py').read_text(encoding='utf-8')); ast.parse(pathlib.Path('scripts/generate-icon.py').read_text(encoding='utf-8'))"
-node --check cmd/tautline/web/app.js
+for javascript in cmd/tautline/web/app.js extensions/laju-relay-bridge/background.js extensions/laju-relay-bridge/content.js extensions/laju-relay-bridge/config.example.js; do
+  node --check "$javascript"
+done
+python -c "import base64,hashlib,json,pathlib; m=json.loads(pathlib.Path('extensions/laju-relay-bridge/manifest.json').read_text()); h=hashlib.sha256(base64.b64decode(m['key'])).digest()[:16]; eid=''.join(chr(97+(b>>4))+chr(97+(b&15)) for b in h); assert m['version']=='2.10.0' and eid=='oipiaofdfblejkognebaddegbnfaplph' and '<all_urls>' not in m['host_permissions']"
 
 TAUTLINE_WIDGET_DOMAIN= TAUTLINE_PUBLIC_BASE_URL= go test -count=1 ./...
 go vet ./...

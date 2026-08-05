@@ -22,6 +22,7 @@ type applicationRuntime struct {
 	processes   *processSessionManager
 	tunnel      *tunnelManager
 	agents      *agentManager
+	relayBridge *relayBridgeManager
 	adminKey    string
 	csrfToken   string
 	probeCancel context.CancelFunc
@@ -44,20 +45,25 @@ func newApplicationRuntime(store *configStore) (*applicationRuntime, error) {
 	if err != nil {
 		return nil, err
 	}
+	relayBridge, err := newRelayBridgeManager(store.snapshot().RuntimeDir)
+	if err != nil {
+		return nil, err
+	}
 	activity := newActivityStore()
 	return &applicationRuntime{
-		startedAt:  time.Now().UTC(),
-		config:     store,
-		router:     router,
-		lightpanda: lightpanda,
-		activity:   activity,
-		mcpClients: newExternalMCPManager(store),
-		processes:  newProcessSessionManager(),
-		tunnel:     newTunnelManager(store),
-		agents:     agents,
-		adminKey:   adminKey,
-		csrfToken:  randomHex(24),
-		probeDone:  make(chan struct{}),
+		startedAt:   time.Now().UTC(),
+		config:      store,
+		router:      router,
+		lightpanda:  lightpanda,
+		activity:    activity,
+		mcpClients:  newExternalMCPManager(store),
+		processes:   newProcessSessionManager(),
+		tunnel:      newTunnelManager(store),
+		agents:      agents,
+		relayBridge: relayBridge,
+		adminKey:    adminKey,
+		csrfToken:   randomHex(24),
+		probeDone:   make(chan struct{}),
 	}, nil
 }
 

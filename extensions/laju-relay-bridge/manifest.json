@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Tautline Relay Bridge",
+  "version": "2.10.0",
+  "description": "Delivers Tautline relay worker prompts to fresh ChatGPT tabs in Laju Browser.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAx/Bo1mXaPmBwMa8M/s9zxG41NR7WCcStyTdSvNKrbCahAuq3gYYKmOPSmCobagYqxxHrfVLvqcM1jMZK2tuTq9kOUnvDDYRsPwkBUfOE0JH7X+yQ45R1Ss4zcuSPKAFYZIdSb8nfu2fX/fjRB/WCB5+bw7Bx9sDsuBIADRAY6NoX3IE/Ah1+8GFusCImlBCJgGr7XpOe6Cx8YeldLWB7e5RUbFcw9zKv8KwIlFb6HzUoBRjVleYGlu1StxY8/TrM5dgBZ0KpoHflOBsyQr/agsJhpApiAawvznGjkBJU/NBPI//F+JQyoYewhZJnkeVOCOqlvQjvIb1PIvCo93Pb3wIDAQAB",
+  "permissions": ["alarms", "storage", "tabs"],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "https://chatgpt.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://chatgpt.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

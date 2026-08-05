@@ -1,4 +1,4 @@
-# Connect Tautline v2.9.0 to ChatGPT
+# Connect Tautline v2.10.0 to ChatGPT
 
 Tautline listens on `127.0.0.1:7688` by default. ChatGPT requires a stable HTTPS origin that forwards to the local MCP endpoint.
 
@@ -81,9 +81,9 @@ Starting the local executable alone cannot open an iframe because widget renderi
 
 ## 6. Use ordinary ChatGPT relay workers
 
-The default relay does not create a consumer ChatGPT conversation automatically. In the main conversation, call `delegate_task`, then copy the returned `worker_prompt`. Open **New Chat** manually, ensure the same Tautline app is available there, paste the prompt, and send it. The worker chat claims the one-time code, receives the exact task and workspace, reports progress, and completes the run. Return to the main conversation and inspect it with `get_agent_run`.
+Run `INSTALL_LAJU_RELAY_BRIDGE.cmd`, then restart Laju Browser once. In the main conversation, `delegate_task` queues its returned `worker_prompt`; a connected bridge opens a fresh `chatgpt.com` tab and submits the prompt through the visible composer. The worker chat claims the one-time code, receives the exact task and workspace, reports progress, and completes the run. Inspect both run and bridge delivery state with `get_agent_run`.
 
-Do not reveal or copy the returned `worker_token`; it is intended only for tool calls inside that worker conversation. A join code can be claimed once. Cancelling or timing out a run invalidates its code and token. The relay makes no Codex, OpenAI API, 9Router, Chromium, Playwright, Selenium, or Electron request. Images must be attached manually in the worker chat.
+When the bridge is disconnected, copy `worker_prompt` into **New Chat** manually. Do not reveal or copy the returned `worker_token`; it is intended only for tool calls inside that worker conversation. A join code can be claimed once. Cancelling or timing out a run invalidates its code and token. The bridge uses no ChatGPT account token, private backend endpoint, Codex, OpenAI API model request, 9Router, Playwright, Selenium, Electron, or additional browser runtime. Images must still be attached manually in the worker chat.
 
 ## 7. Google Docs integration
 
@@ -110,7 +110,7 @@ An existing `docsmcp.googleapis.com` connector is migrated automatically into th
 ## Troubleshooting
 
 - Run `bin\tautline.exe -doctor` first for a read-only summary and concrete corrective actions.
-- Confirm `healthz` reports service `Tautline`, version `2.9.0`, the published tool count, `agent_backend` as `chatgpt-relay`, and `google_docs.mode` as `native-rest` when Google Docs is enabled.
+- Confirm `healthz` reports service `Tautline`, version `2.10.0`, the published tool count, `agent_backend` as `chatgpt-relay`, `relay_bridge.version` as `2.10.0`, and `google_docs.mode` as `native-rest` when Google Docs is enabled.
 - Confirm the tunnel forwards to port `7688`.
 - Confirm the public base URL and widget domain contain only the HTTPS origin.
 - Confirm canonical Protected Resource Metadata returns `/mcp`, versioned metadata returns `/mcp/v2`, and both advertise `tautline offline_access`.

@@ -17,6 +17,7 @@ Tautline can read and modify files, execute commands, coordinate ordinary ChatGP
 - The dashboard binds to `127.0.0.1` and requires a local bootstrap-derived session.
 - Dashboard mutations require CSRF validation.
 - ChatGPT relay join codes are random and single-use. Private worker tokens remain in memory, are omitted from activity payloads, use constant-time comparison, and are cleared at terminal run states.
+- The optional Laju Relay Bridge accepts only direct loopback requests with its dedicated random local token. Its extension is limited to `chatgpt.com` and `127.0.0.1`, and never reads ChatGPT cookies, account tokens, or private backend endpoints.
 - 9Router API keys are not included in dashboard state.
 - New sub-agent delegation can be disabled globally.
 - Requested and returned 9Router models must be present in the configured allowlist when the legacy backend is selected.
@@ -39,7 +40,7 @@ Tautline can read and modify files, execute commands, coordinate ordinary ChatGP
 
 ## Sub-agent and image data
 
-With the default ChatGPT relay backend, Tautline stores the delegated task in memory and transfers it only when a separately opened ordinary ChatGPT conversation claims the one-time join code. The worker conversation is subject to the privacy, retention, plan limits, and account controls of ChatGPT. Do not paste a worker prompt into an untrusted account or share its one-time code.
+With the default ChatGPT relay backend, Tautline stores the delegated task in memory and transfers it only when an ordinary ChatGPT worker conversation claims the one-time join code. The optional Laju extension can open that fresh tab and submit the prompt through the visible composer; disconnected bridges retain the manual flow. The worker conversation is subject to the privacy, retention, plan limits, and account controls of ChatGPT. Do not deliver a worker prompt to an untrusted account or share its one-time code.
 
 The relay does not transfer images automatically; attach them manually in the intended worker chat. When the optional legacy 9Router backend is selected, delegated text or verified in-memory image payloads may be processed by external providers selected by that router. Review those providers' privacy and retention policies before sending sensitive material.
 
@@ -49,4 +50,4 @@ Open a private GitHub security advisory instead of a public issue. Include the a
 
 ## Supported versions
 
-Security fixes are applied to the latest release line. The currently documented public release is Tautline v2.9.0.
+Security fixes are applied to the latest release line. The currently documented public release is Tautline v2.10.0.

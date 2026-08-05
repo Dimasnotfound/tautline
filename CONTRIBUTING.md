@@ -24,7 +24,7 @@ Windows PowerShell:
 ./scripts/build.ps1
 ```
 
-The gate verifies Go formatting, the Python bridge, dashboard JavaScript, unit tests, `go vet`, the main binary, and the Lightpanda shim.
+The gate verifies Go formatting, the Python bridge, dashboard and Laju Relay Bridge JavaScript, extension manifest scope, unit tests, `go vet`, the main binary, and the Lightpanda shim.
 
 ## Pull requests
 

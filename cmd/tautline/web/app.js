@@ -98,6 +98,7 @@ function render(state) {
   $("allowed-roots").innerHTML = roots.length ? roots.map((root) => `<code>${esc(root)}</code>`).join("") : '<div class="empty">No allowed roots configured.</div>';
 
   renderRouter(state);
+  renderRelayBridge(state.relay_bridge || {});
   renderMCP(state.mcp_servers || []);
   renderTunnel(state);
   renderBrowser(state);
@@ -161,6 +162,14 @@ function renderRouter(state) {
   }
   setInput("router-url", config.base_url || "");
   if (!ui.routerDirty) renderRouterModelControls(config, router);
+}
+
+function renderRelayBridge(bridge) {
+  const connected = Boolean(bridge.connected);
+  $("metric-relay").textContent = connected ? "Connected" : "Manual fallback";
+  $("metric-relay-detail").textContent = connected
+    ? `${bridge.clients || 0} Laju client${bridge.clients === 1 ? "" : "s"} · ${bridge.queued || 0} queued`
+    : "Install or restart the Laju Relay Bridge";
 }
 
 function renderMCP(servers) {

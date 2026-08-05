@@ -2,6 +2,23 @@
 
 All notable changes to Tautline are documented here.
 
+## [2.10.0] - 2026-08-05
+
+### Added
+
+- Optional Laju Relay Bridge extension for automatic fresh-tab delivery of `delegate_task.worker_prompt` through the visible ChatGPT composer.
+- Loopback-only relay endpoints protected by a dedicated random local token, bounded payloads, dispatch leases, acknowledgements, and manual fallback status.
+- Atomic Laju extension installer with stable extension identity and narrowly scoped permissions for `chatgpt.com` and `127.0.0.1` only.
+
+### Changed
+
+- `delegate_task`, `get_agent_run`, `list_subagents`, health, doctor, and the dashboard now report Relay Bridge delivery and connection state.
+- `SWITCH_TO_TAUTLINE.cmd` validates the v2.10 relay health contract and installs the optional Laju extension after a successful runtime handoff without restarting Laju Browser.
+
+### Security
+
+- The bridge never reads ChatGPT cookies, bearer tokens, account sessions, or private backend endpoints. It performs only local authenticated polling and visible composer interaction inside Laju Browser.
+
 ## [2.9.0] - 2026-08-05
 
 ### Added

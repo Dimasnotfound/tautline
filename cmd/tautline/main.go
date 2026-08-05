@@ -227,11 +227,13 @@ func doStart(store *configStore, port, requestedTunnelMode string, openDashboard
 			"google_docs":       googleDocsHealth(store),
 			"host_instructions": instructionStatus,
 			"router":            app.agents.routerStatusSnapshot(),
+			"relay_bridge":      app.relayBridge.status(),
 			"lightpanda":        app.lightpanda.status(),
 			"tunnel":            app.tunnel.status(),
 		})
 	})
 	registerOAuthRoutes(mux, oauth)
+	registerRelayBridgeRoutes(mux, app.relayBridge)
 	registerDashboardRoutes(mux, app)
 
 	address := "127.0.0.1:" + cfg.Port

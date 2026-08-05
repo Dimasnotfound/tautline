@@ -12,7 +12,7 @@ $Root = Split-Path -Parent $PSScriptRoot
 $BuildScript = Join-Path $PSScriptRoot "build.ps1"
 $StartScript = Join-Path $PSScriptRoot "start.ps1"
 $EnvPath = Join-Path $Root ".env"
-$ExpectedVersion = "2.9.0"
+$ExpectedVersion = "2.10.0"
 
 $Binary = Join-Path $Root "bin\tautline.exe"
 $Shim = Join-Path $Root "bin\lightpanda-shim.exe"
@@ -604,6 +604,9 @@ function Test-StagedRuntime {
         if ($Health.host_instructions.fallback) {
             throw "The staged runtime fell back from the configured Codex host instructions. See $StandardError"
         }
+        if ([string]$Health.relay_bridge.version -ne $Version) {
+            throw "The staged runtime did not expose the v$Version Laju Relay Bridge health contract. See $StandardError"
+        }
         if ($EnabledMCPCount -gt 0 -and [int]$Health.mcp_clients.connected -lt $EnabledMCPCount) {
             throw "Staged runtime connected $($Health.mcp_clients.connected) of $EnabledMCPCount enabled MCP integrations. See $StandardError"
         }
@@ -686,6 +689,12 @@ try {
     Write-Host "Starting Tautline v$ExpectedVersion..." -ForegroundColor Cyan
     $NewProcess = Start-TautlineConsole -SelectedPort $Port
     $Health = Wait-ForHealthyVersion -HealthUrl $HealthUrl -Version $ExpectedVersion -Process $NewProcess
+    try {
+        & (Join-Path $PSScriptRoot "install-laju-relay-bridge.ps1") -Port $Port
+    }
+    catch {
+        Write-Warning "Tautline v$ExpectedVersion is active, but the optional Laju Relay Bridge could not be installed: $($_.Exception.Message)"
+    }
 
     Remove-Item -Force -ErrorAction SilentlyContinue $BackupBinary, $BackupShim
     Write-Host "Update handoff completed successfully." -ForegroundColor Green

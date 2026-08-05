@@ -32,9 +32,25 @@ if ($LASTEXITCODE -ne 0) {
     throw "Python syntax check failed."
 }
 
-& node --check cmd/tautline/web/app.js
+foreach ($JavaScript in @(
+    "cmd/tautline/web/app.js",
+    "extensions/laju-relay-bridge/background.js",
+    "extensions/laju-relay-bridge/content.js",
+    "extensions/laju-relay-bridge/config.example.js"
+)) {
+    & node --check $JavaScript
+    if ($LASTEXITCODE -ne 0) {
+        throw "JavaScript syntax check failed: $JavaScript"
+    }
+}
+
+$Manifest = Get-Content "extensions/laju-relay-bridge/manifest.json" -Raw | ConvertFrom-Json
+if ([string]$Manifest.version -ne "2.10.0" -or @($Manifest.host_permissions) -contains "<all_urls>") {
+    throw "Laju Relay Bridge manifest validation failed."
+}
+& (Join-Path $PSScriptRoot "install-laju-relay-bridge.ps1") -PreflightOnly
 if ($LASTEXITCODE -ne 0) {
-    throw "Dashboard JavaScript syntax check failed."
+    throw "Laju Relay Bridge installer preflight failed."
 }
 
 $SavedWidgetDomain = [Environment]::GetEnvironmentVariable("TAUTLINE_WIDGET_DOMAIN", "Process")

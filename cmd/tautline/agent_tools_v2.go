@@ -11,22 +11,24 @@ import (
 )
 
 type agentCapacityView struct {
-	Kind          string       `json:"kind"`
-	Title         string       `json:"title"`
-	Summary       string       `json:"summary"`
-	Enabled       bool         `json:"enabled"`
-	Backend       string       `json:"backend"`
-	DefaultModel  string       `json:"default_model,omitempty"`
-	AllowedModels []string     `json:"allowed_models,omitempty"`
-	Slots         []AgentSlot  `json:"slots"`
-	Runs          []AgentRun   `json:"runs,omitempty"`
-	Router        RouterStatus `json:"router,omitempty"`
+	Kind          string            `json:"kind"`
+	Title         string            `json:"title"`
+	Summary       string            `json:"summary"`
+	Enabled       bool              `json:"enabled"`
+	Backend       string            `json:"backend"`
+	DefaultModel  string            `json:"default_model,omitempty"`
+	AllowedModels []string          `json:"allowed_models,omitempty"`
+	Slots         []AgentSlot       `json:"slots"`
+	Runs          []AgentRun        `json:"runs,omitempty"`
+	Router        RouterStatus      `json:"router,omitempty"`
+	RelayBridge   relayBridgeStatus `json:"relay_bridge"`
 }
 
 type agentRunView struct {
-	Kind         string   `json:"kind"`
-	Run          AgentRun `json:"run"`
-	WorkerPrompt string   `json:"worker_prompt,omitempty"`
+	Kind           string                   `json:"kind"`
+	Run            AgentRun                 `json:"run"`
+	WorkerPrompt   string                   `json:"worker_prompt,omitempty"`
+	BridgeDelivery *relayBridgeDeliveryView `json:"bridge_delivery,omitempty"`
 }
 
 type browserToolView struct {
@@ -50,7 +52,7 @@ func registerAgentTools(s *server.MCPServer) {
 
 	delegateTool := mcp.NewTool("delegate_task",
 		mcp.WithTitleAnnotation("Delegate task"),
-		mcp.WithDescription("Create one asynchronous sub-agent run. The default chatgpt-relay backend returns a worker_prompt that the user pastes into a new ordinary ChatGPT conversation; that chat claims and completes the task through Tautline without Codex, API model calls, or browser automation. The legacy 9router backend remains optional. Use get_agent_run to inspect progress."),
+		mcp.WithDescription("Create one asynchronous sub-agent run. The default chatgpt-relay backend queues worker_prompt for the optional Laju Relay Bridge, which opens a fresh ordinary ChatGPT worker tab automatically; worker_prompt remains available as a manual fallback. No Codex, API model call, private ChatGPT backend, or legacy 9Router request is used. Use get_agent_run to inspect progress."),
 		mcp.WithString("task", mcp.Required(), mcp.Description("Complete delegated instruction")),
 		mcp.WithString("workspace_id", mcp.Description("Optional workspace_id previously returned by open_workspace; enables read-only workspace tools for the sub-agent")),
 		mcp.WithString("agent_id", mcp.Description("Temporary logical agent ID chosen by ChatGPT")),
@@ -170,13 +172,14 @@ func handleListSubagents(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToo
 		summary = "Sub-agent delegation is disabled"
 	}
 	view := agentCapacityView{
-		Kind:    "subagents",
-		Title:   "Tautline sub-agents",
-		Summary: summary,
-		Enabled: cfg.AgentEnabled,
-		Backend: cfg.AgentBackend,
-		Slots:   slots,
-		Runs:    runs,
+		Kind:        "subagents",
+		Title:       "Tautline sub-agents",
+		Summary:     summary,
+		Enabled:     cfg.AgentEnabled,
+		Backend:     cfg.AgentBackend,
+		Slots:       slots,
+		Runs:        runs,
+		RelayBridge: runtime.relayBridge.status(),
 	}
 	if cfg.AgentBackend == agentBackend9Router {
 		view.DefaultModel = cfg.Router.DefaultModel
@@ -210,10 +213,14 @@ func handleDelegateTask(_ context.Context, req mcp.CallToolRequest) (*mcp.CallTo
 	view := agentRunView{Kind: "agent_run", Run: run}
 	if prompt, ok := runtime.agents.chatGPTRelayWorkerPrompt(run.ID); ok {
 		view.WorkerPrompt = prompt
+		delivery := runtime.relayBridge.enqueue(run.ID, prompt, run.TimeoutSeconds)
+		view.BridgeDelivery = &delivery
 	}
 	fallback := fmt.Sprintf("Delegated %s to %s as %s using %s.", run.ID, run.SlotID, displayAgentName(run), run.Provider)
-	if view.WorkerPrompt != "" {
-		fallback += " Open a new ordinary ChatGPT conversation and paste worker_prompt to start it."
+	if view.BridgeDelivery != nil && view.BridgeDelivery.Connected {
+		fallback += " Laju Relay Bridge queued worker_prompt for automatic delivery to a fresh ChatGPT tab."
+	} else if view.WorkerPrompt != "" {
+		fallback += " Laju Relay Bridge is disconnected; open a new ordinary ChatGPT conversation and paste worker_prompt as the fallback."
 	}
 	activityView := view
 	activityView.WorkerPrompt = ""
@@ -263,6 +270,10 @@ func handleGetAgentRun(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 	}
 finished:
 	view := agentRunView{Kind: "agent_run", Run: run}
+	if run.Provider == "ChatGPT" {
+		delivery := runtime.relayBridge.deliveryView(run.ID)
+		view.BridgeDelivery = &delivery
+	}
 	fallback := fmt.Sprintf("Agent %s is %s: %s", run.ID, run.Status, run.Activity)
 	return newToolResult("get_agent_run", view, view, fallback), nil
 }
@@ -276,6 +287,7 @@ func handleCancelAgentRun(_ context.Context, req mcp.CallToolRequest) (*mcp.Call
 	if err := runtime.agents.cancelRun(runID); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
+	runtime.relayBridge.markRun(runID, "cancelled")
 	run, _ := runtime.agents.getRun(runID)
 	view := agentRunView{Kind: "agent_run", Run: run}
 	return newToolResult("cancel_agent_run", view, view, "Cancelled agent run "+runID+"."), nil
@@ -308,6 +320,7 @@ func handleClaimAgentTask(_ context.Context, req mcp.CallToolRequest) (*mcp.Call
 	if err != nil {
 		return relayAgentToolError("claim_agent_task", err), nil
 	}
+	runtime.relayBridge.markRun(assignment.RunID, "claimed")
 	fallback := "Claimed ChatGPT relay task " + assignment.RunID + ". Keep worker_token private and complete the task before your final response."
 	activityAssignment := assignment
 	activityAssignment.WorkerToken = ""
@@ -336,6 +349,7 @@ func handleCompleteAgentTask(_ context.Context, req mcp.CallToolRequest) (*mcp.C
 	if err != nil {
 		return relayAgentToolError("complete_agent_task", err), nil
 	}
+	runtime.relayBridge.markRun(run.ID, run.Status)
 	view := agentRunView{Kind: "agent_run", Run: run}
 	return newToolResult("complete_agent_task", view, view, "Completed ChatGPT relay task "+run.ID+" with status "+run.Status+"."), nil
 }

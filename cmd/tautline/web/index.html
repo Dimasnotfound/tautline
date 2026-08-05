@@ -48,6 +48,7 @@
           <article class="metric-card"><span>Agent backend</span><strong id="metric-router">Checking</strong><small id="metric-router-detail">ChatGPT relay</small></article>
           <article class="metric-card"><span>MCP integrations</span><strong id="metric-mcp">0 connected</strong><small id="metric-mcp-detail">0 tools published</small></article>
           <article class="metric-card"><span>Sub-agents</span><strong id="metric-agents">0 available</strong><small id="metric-agents-detail">0 busy</small></article>
+          <article class="metric-card"><span>Laju Relay Bridge</span><strong id="metric-relay">Checking</strong><small id="metric-relay-detail">Automatic worker handoff</small></article>
           <article class="metric-card"><span>Browser</span><strong id="metric-browser">Checking</strong><small id="metric-browser-detail">Lightpanda</small></article>
           <article class="metric-card"><span>Tunnel</span><strong id="metric-tunnel">Off</strong><small id="metric-tunnel-detail">No public endpoint</small></article>
         </div>
@@ -88,10 +89,10 @@
 
       <section id="router" class="view" role="tabpanel" hidden data-title="Agent backend" data-description="Choose ordinary ChatGPT relay workers or the optional legacy 9Router backend.">
         <article class="panel narrow-panel">
-          <div class="panel-heading"><div><h2>Sub-agent execution</h2><p>ChatGPT relay uses separate ordinary ChatGPT conversations and requires no Codex, API model call, or browser automation.</p></div><span class="badge" id="router-badge">Checking</span></div>
+          <div class="panel-heading"><div><h2>Sub-agent execution</h2><p>ChatGPT relay uses ordinary ChatGPT worker conversations. The optional Laju extension automates only the visible fresh-tab handoff, without account tokens or private ChatGPT endpoints.</p></div><span class="badge" id="router-badge">Checking</span></div>
           <form id="router-form" class="form-grid">
             <label class="field span-2"><span>Backend</span><select id="agent-backend" name="agent_backend"><option value="chatgpt-relay">ChatGPT relay</option><option value="9router">Legacy 9Router</option></select></label>
-            <div id="relay-help" class="field span-2"><div class="field-label-row"><span>Worker flow</span><small>delegate_task returns a prompt. Paste it into a manually opened New Chat, then the worker claims and completes the task through Tautline.</small></div></div>
+            <div id="relay-help" class="field span-2"><div class="field-label-row"><span>Worker flow</span><small>With the Laju Relay Bridge connected, delegate_task opens a fresh worker tab and submits its prompt automatically. The returned worker_prompt remains the manual fallback.</small></div></div>
             <label class="field span-2 legacy-router-field"><span>Legacy 9Router base URL</span><input id="router-url" name="router_base_url" autocomplete="off"></label>
             <label class="field legacy-router-field"><span>Default model</span><select id="router-model" name="router_default_model"></select></label>
             <label class="field legacy-router-field"><span>API key</span><input id="router-key" name="router_api_key" type="password" placeholder="Leave blank to keep current"></label>

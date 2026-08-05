@@ -48,6 +48,7 @@ type doctorView struct {
 	GoogleDocs           googleDocsHealthView  `json:"google_docs"`
 	AgentBackend         string                `json:"agent_backend"`
 	Router               RouterStatus          `json:"router,omitempty"`
+	RelayBridge          relayBridgeStatus     `json:"relay_bridge"`
 	Lightpanda           LightpandaStatus      `json:"lightpanda"`
 	Tunnel               TunnelStatus          `json:"tunnel"`
 	HostInstructions     hostInstructionStatus `json:"host_instructions"`
@@ -64,6 +65,7 @@ type doctorHealthResponse struct {
 	GoogleDocs       googleDocsHealthView  `json:"google_docs"`
 	AgentBackend     string                `json:"agent_backend"`
 	Router           RouterStatus          `json:"router,omitempty"`
+	RelayBridge      relayBridgeStatus     `json:"relay_bridge"`
 	Lightpanda       LightpandaStatus      `json:"lightpanda"`
 	Tunnel           TunnelStatus          `json:"tunnel"`
 	HostInstructions hostInstructionStatus `json:"host_instructions"`
@@ -72,7 +74,7 @@ type doctorHealthResponse struct {
 func registerDoctorTool(s *server.MCPServer) {
 	tool := mcp.NewTool("tautline_doctor",
 		mcp.WithTitleAnnotation("Diagnose Tautline"),
-		mcp.WithDescription("Run a read-only Tautline diagnostic summary for version, configuration, allowed roots, OAuth readiness, Google Docs, external MCP connections, published tools, the active sub-agent backend, Lightpanda, tunnel, and concrete corrective actions. Secret values are never returned."),
+		mcp.WithDescription("Run a read-only Tautline diagnostic summary for version, configuration, allowed roots, OAuth readiness, Google Docs, external MCP connections, published tools, the active sub-agent backend, Laju Relay Bridge, Lightpanda, tunnel, and concrete corrective actions. Secret values are never returned."),
 		mcp.WithOutputSchema[doctorView](),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithDestructiveHintAnnotation(false),
@@ -100,6 +102,7 @@ func runtimeDoctorView(runtime *applicationRuntime) doctorView {
 	view.MCP = countMCPStatuses(view.MCPServers)
 	view.AgentBackend = runtime.config.snapshot().AgentBackend
 	view.Router = runtime.agents.routerStatusSnapshot()
+	view.RelayBridge = runtime.relayBridge.status()
 	view.Lightpanda = runtime.lightpanda.status()
 	view.Tunnel = runtime.tunnel.status()
 	_, view.HostInstructions, _ = hostInstructions()
@@ -145,6 +148,7 @@ func cliDoctorView(store *configStore, port string) doctorView {
 	view.GoogleDocs = health.GoogleDocs
 	view.AgentBackend = health.AgentBackend
 	view.Router = health.Router
+	view.RelayBridge = health.RelayBridge
 	view.Lightpanda = health.Lightpanda
 	view.Tunnel = health.Tunnel
 	view.HostInstructions = health.HostInstructions
@@ -230,7 +234,11 @@ func appendRuntimeDoctorChecks(view *doctorView, cfg TautlineConfig) {
 		addDoctorCheck(view, "external MCP", "ok", fmt.Sprintf("all %d integrations are connected", view.MCP.Configured), "")
 	}
 	if cfg.AgentEnabled && cfg.AgentBackend == agentBackendChatGPTRelay {
-		addDoctorCheck(view, "sub-agent backend", "ok", "ChatGPT relay is active; no model router, API key, Codex process, or browser automation is required", "Open a new ordinary ChatGPT conversation and paste delegate_task.worker_prompt for each worker.")
+		if view.RelayBridge.Connected {
+			addDoctorCheck(view, "sub-agent backend", "ok", "ChatGPT relay and the Laju Relay Bridge are connected for automatic fresh-tab worker delivery", "")
+		} else {
+			addDoctorCheck(view, "sub-agent backend", "warn", "ChatGPT relay is active but the optional Laju Relay Bridge is disconnected; manual worker_prompt delivery remains available", "Run INSTALL_LAJU_RELAY_BRIDGE.cmd and restart Laju Browser, or paste delegate_task.worker_prompt into a new ordinary ChatGPT conversation.")
+		}
 	} else if cfg.AgentEnabled && !view.Router.Reachable {
 		addDoctorCheck(view, "9Router", "warn", "legacy 9Router backend is selected but not reachable", "Start 9Router, switch TAUTLINE_AGENT_BACKEND to chatgpt-relay, or disable delegation.")
 	} else if cfg.AgentEnabled {

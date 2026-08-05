@@ -1,6 +1,6 @@
 # Context-safe coding workflow
 
-Tautline v2.9.0 creates one new prompt-scoped activity monitor at the first prompt-boundary tool in each user turn, while retaining managed checkout or worktree workspaces, ChatGPT relay workers, and bounded single-call or interactive command execution. Multi-file reads, read-only diagnostics, native Google Docs REST tools, Codex host guidance, multi-transport MCP support, and isolated release preflight continue to protect the active runtime.
+Tautline v2.10.0 creates one new prompt-scoped activity monitor at the first prompt-boundary tool in each user turn, while retaining managed checkout or worktree workspaces, ChatGPT relay workers, optional automatic Laju fresh-tab handoff, and bounded single-call or interactive command execution. Multi-file reads, read-only diagnostics, native Google Docs REST tools, Codex host guidance, multi-transport MCP support, and isolated release preflight continue to protect the active runtime.
 
 ## 1. Start one monitor per user turn
 
@@ -45,7 +45,7 @@ Call `skills_search` with the resolved task, then load a relevant compatible res
 
 ## 9. Delegate only when useful
 
-Sub-agent tasks require an enabled slot. With the default `chatgpt-relay` backend, `delegate_task` returns `worker_prompt`; ask the user to open an ordinary ChatGPT New Chat and paste it. That worker calls `claim_agent_task`, keeps `worker_token` private, works only on the returned task and workspace, reports meaningful progress through `update_agent_run`, and calls `complete_agent_task` exactly once before its final response. Inspect the result with `get_agent_run`. The optional `9router` backend still enforces its model allowlist.
+Sub-agent tasks require an enabled slot. With the default `chatgpt-relay` backend, `delegate_task` queues `worker_prompt` for the optional Laju Relay Bridge. A connected bridge opens a fresh ordinary ChatGPT tab and submits the prompt through the visible composer; when disconnected, ask the user to paste `worker_prompt` into New Chat manually. That worker calls `claim_agent_task`, keeps `worker_token` private, works only on the returned task and workspace, reports meaningful progress through `update_agent_run`, and calls `complete_agent_task` exactly once before its final response. Inspect the result and bridge delivery state with `get_agent_run`. The optional `9router` backend still enforces its model allowlist.
 
 ## 10. Verify the result
 
