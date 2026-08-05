@@ -186,7 +186,7 @@ const detailCache = new Map();
 const restoredState = window.openai && window.openai.widgetState && typeof window.openai.widgetState === "object" ? window.openai.widgetState : {};
 let requestID = 0;
 let monitorID = String(restoredState.monitorId || "");
-let monitorActive = true;
+let monitorActive = restoredState.active !== false;
 let workspaceID = "";
 let workspacePath = "";
 let selectedID = String(restoredState.selectedId || "");
@@ -262,27 +262,48 @@ function extractResult(payload) {
 }
 function persistState() {
   try {
-    if (window.openai && typeof window.openai.setWidgetState === "function") window.openai.setWidgetState({ monitorId: monitorID, selectedId: selectedID, pinned });
+    if (window.openai && typeof window.openai.setWidgetState === "function") window.openai.setWidgetState({ monitorId: monitorID, selectedId: selectedID, pinned, active: monitorActive });
   } catch (_) {}
+}
+function applyBootstrap(data) {
+  const incomingMonitor = String(data.monitorId || data.monitor_id || "");
+  if (!incomingMonitor) return;
+  const changed = monitorID !== incomingMonitor;
+  monitorID = incomingMonitor;
+  const id = data.workspaceId || data.workspace_id;
+  workspaceID = id ? String(id) : "";
+  workspacePath = String(data.path || data.workspacePath || "");
+  if (changed) {
+    monitorActive = true;
+    clearTimeout(pollTimer);
+    snapshot = null;
+    selectedID = "";
+    pinned = false;
+    detailCache.clear();
+    pollDelay = 1400;
+    lastSequence = -1;
+    lastTimelineSignature = "";
+    lastDetailSignature = "";
+  }
+  persistState();
+  renderIdentity();
+  renderSummary();
+  renderTimeline(true);
+  renderInspector();
+  updateLatestButton();
+  updateLive(true);
+  reportSize();
+  refresh(true);
 }
 function initialWorkspace(payload) {
   try {
     const data = extractResult(payload);
     if (!data || typeof data !== "object") return;
-    if (data.kind !== "activity_bootstrap" && data.kind !== "activity_snapshot") return;
-    const incomingMonitor = String(data.monitorId || data.monitor_id || "");
-    if (incomingMonitor && monitorID && incomingMonitor !== monitorID) return;
-    if (incomingMonitor) monitorID = incomingMonitor;
-    const id = data.workspaceId || data.workspace_id;
-    if (id) workspaceID = String(id);
-    workspacePath = String(data.path || data.workspacePath || workspacePath || "");
-    if (data.kind === "activity_snapshot") {
-      applySnapshot(data);
+    if (data.kind === "activity_bootstrap") {
+      applyBootstrap(data);
       return;
     }
-    persistState();
-    renderIdentity();
-    if (monitorID) refresh(true);
+    if (data.kind === "activity_snapshot") applySnapshot(data);
   } catch (error) {
     renderFailure(error);
   }

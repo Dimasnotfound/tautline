@@ -127,6 +127,50 @@ func TestActivityStoreIsolatesPromptMonitors(t *testing.T) {
 	}
 }
 
+func TestActivityMiddlewareDropsLateCompletionAfterPromptSwitch(t *testing.T) {
+	store := newActivityStore()
+	firstID := store.startMonitor("ws_shared")
+	started := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	handler := activityMiddleware(store)(func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		close(started)
+		<-release
+		return newToolResult("read", map[string]any{"kind": "file"}, map[string]any{"kind": "file", "workspaceId": "ws_shared", "path": "shared.go"}, "late completion"), nil
+	})
+
+	go func() {
+		_, err := handler(context.Background(), toolRequest("read", map[string]any{"workspace_id": "ws_shared"}))
+		done <- err
+	}()
+	<-started
+	secondID := store.startMonitor("ws_shared")
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+
+	first := mustActivitySnapshot(t, store, firstID, "")
+	second := mustActivitySnapshot(t, store, secondID, "")
+	if first.Active || len(first.Events) != 0 {
+		t.Fatalf("archived monitor changed after the prompt switch: %+v", first)
+	}
+	if !second.Active || len(second.Events) != 0 {
+		t.Fatalf("late activity from the old prompt leaked into the new monitor: %+v", second)
+	}
+
+	liveHandler := activityMiddleware(store)(func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return newToolResult("read", map[string]any{"kind": "file"}, map[string]any{"kind": "file", "workspaceId": "ws_shared", "path": "shared.go"}, "late completion"), nil
+	})
+	if _, err := liveHandler(context.Background(), toolRequest("read", map[string]any{"workspace_id": "ws_shared"})); err != nil {
+		t.Fatal(err)
+	}
+	second = mustActivitySnapshot(t, store, secondID, "")
+	if len(second.Events) != 1 || second.Events[0].Summary != "late completion" || second.Events[0].Path != "shared.go" {
+		t.Fatalf("new prompt activity was not recorded in its active monitor: %+v", second)
+	}
+}
+
 func TestActivityStoreCanInspectOlderEvent(t *testing.T) {
 	store := newActivityStore()
 	monitorID := store.startMonitor("ws_one")

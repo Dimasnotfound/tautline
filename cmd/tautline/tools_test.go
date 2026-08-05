@@ -139,6 +139,28 @@ func TestActivityWidgetIsSingleAndLightweight(t *testing.T) {
 	}
 }
 
+func TestActivityWidgetBootstrapSupersedesRestoredMonitor(t *testing.T) {
+	html := activityWidgetHTML()
+	bootstrap := strings.Index(html, `if (data.kind === "activity_bootstrap")`)
+	reject := strings.Index(html, `if (incomingMonitor && monitorID && incomingMonitor !== monitorID) return;`)
+	if bootstrap < 0 || reject < 0 || bootstrap > reject {
+		t.Fatal("activity bootstrap must replace restored monitor state before mismatched snapshots are rejected")
+	}
+	for _, required := range []string{
+		"function applyBootstrap",
+		"let monitorActive = restoredState.active !== false",
+		"active: monitorActive",
+		"monitorActive = true",
+		"snapshot = null",
+		"detailCache.clear()",
+		"applyBootstrap(data)",
+	} {
+		if !strings.Contains(html, required) {
+			t.Fatalf("activity bootstrap reset is missing %q", required)
+		}
+	}
+}
+
 func TestActivityWidgetJavaScriptIsValid(t *testing.T) {
 	html := activityWidgetHTML()
 	lower := strings.ToLower(html)
@@ -207,7 +229,7 @@ func TestActivityWidgetV252LayoutAndInteractionContract(t *testing.T) {
 		"if (next.workspaceId) workspaceID = String(next.workspaceId)",
 		"const args = { monitor_id: monitorID }",
 		"incomingMonitor !== monitorID",
-		"data.kind !== \"activity_bootstrap\"",
+		"data.kind === \"activity_bootstrap\"",
 		"monitorActive = next.active !== false",
 		"archived ? \"Archived\"",
 		"timeline.scrollTop = pinned ? scrollTop : 0",

@@ -343,11 +343,14 @@ func setAppOnlyToolMeta(tool *mcp.Tool) {
 	})
 }
 
-func newToolResult(toolName string, modelContent, activityContent any, fallback string) *mcp.CallToolResult {
+func newToolResult(_ string, modelContent, activityContent any, fallback string) *mcp.CallToolResult {
 	result := mcp.NewToolResultStructured(modelContent, fallback)
-	if recordActivity(toolName, activityContent, fallback) {
-		result.Meta = mcp.NewMetaFromMap(map[string]any{activityRecordedMeta: true})
-	}
+	result.Meta = mcp.NewMetaFromMap(map[string]any{
+		activityPendingMeta: map[string]any{
+			"payload":  activityContent,
+			"fallback": fallback,
+		},
+	})
 	return result
 }
 

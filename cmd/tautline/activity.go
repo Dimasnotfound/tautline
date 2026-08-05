@@ -14,6 +14,7 @@ import (
 
 const (
 	activityRecordedMeta = "tautline/activityRecorded"
+	activityPendingMeta  = "tautline/activityPending"
 	activityLimit        = 64
 	activityMonitorLimit = 64
 	activitySnapshotSize = 28
@@ -122,6 +123,12 @@ func (store *activityStore) activeMonitorLocked() *activityMonitor {
 	return store.startMonitorLocked("")
 }
 
+func (store *activityStore) captureActiveMonitorID() string {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	return store.activeMonitorLocked().ID
+}
+
 func (store *activityStore) bindWorkspace(workspaceID string) {
 	workspaceID = strings.TrimSpace(workspaceID)
 	if workspaceID == "" {
@@ -141,15 +148,6 @@ func isInternalActivityTool(toolName string) bool {
 	}
 }
 
-func recordActivity(toolName string, payload any, fallback string) bool {
-	runtime, err := currentApplicationRuntime()
-	if err != nil || runtime.activity == nil || isInternalActivityTool(toolName) {
-		return false
-	}
-	runtime.activity.record(toolName, payload, fallback, false)
-	return true
-}
-
 func consumeActivityMarker(result *mcp.CallToolResult) bool {
 	if result == nil || result.Meta == nil || result.Meta.AdditionalFields == nil {
 		return false
@@ -158,22 +156,46 @@ func consumeActivityMarker(result *mcp.CallToolResult) bool {
 	if !marked {
 		return false
 	}
-	delete(result.Meta.AdditionalFields, activityRecordedMeta)
+	deleteActivityMeta(result, activityRecordedMeta)
+	return true
+}
+
+func consumePendingActivity(result *mcp.CallToolResult) (any, string, bool) {
+	if result == nil || result.Meta == nil || result.Meta.AdditionalFields == nil {
+		return nil, "", false
+	}
+	pending, ok := result.Meta.AdditionalFields[activityPendingMeta].(map[string]any)
+	if !ok {
+		return nil, "", false
+	}
+	deleteActivityMeta(result, activityPendingMeta)
+	fallback, _ := pending["fallback"].(string)
+	return pending["payload"], fallback, true
+}
+
+func deleteActivityMeta(result *mcp.CallToolResult, key string) {
+	delete(result.Meta.AdditionalFields, key)
 	if len(result.Meta.AdditionalFields) == 0 && result.Meta.ProgressToken == nil {
 		result.Meta = nil
 	}
-	return true
 }
 
 func activityMiddleware(store *activityStore) server.ToolHandlerMiddleware {
 	return func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 		return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			if store == nil || isInternalActivityTool(request.Params.Name) {
+				return next(ctx, request)
+			}
+			monitorID := store.captureActiveMonitorID()
 			result, err := next(ctx, request)
-			if store == nil || isInternalActivityTool(request.Params.Name) || consumeActivityMarker(result) {
+			if consumeActivityMarker(result) {
 				return result, err
 			}
-			payload, fallback := activityCallPayload(request, result, err)
-			store.record(request.Params.Name, payload, fallback, err != nil || result != nil && result.IsError)
+			payload, fallback, pending := consumePendingActivity(result)
+			if !pending {
+				payload, fallback = activityCallPayload(request, result, err)
+			}
+			store.recordForMonitor(monitorID, request.Params.Name, payload, fallback, err != nil || result != nil && result.IsError)
 			return result, err
 		}
 	}
@@ -245,6 +267,10 @@ func activityResultText(result *mcp.CallToolResult) string {
 }
 
 func (store *activityStore) record(toolName string, payload any, fallback string, failed bool) {
+	store.recordForMonitor(store.captureActiveMonitorID(), toolName, payload, fallback, failed)
+}
+
+func (store *activityStore) recordForMonitor(monitorID, toolName string, payload any, fallback string, failed bool) bool {
 	compact, fields := compactActivityPayload(payload)
 	kind := stringField(fields, "kind")
 	if kind == "" {
@@ -264,7 +290,11 @@ func (store *activityStore) record(toolName string, payload any, fallback string
 	stats, _ := fields["stats"].(map[string]any)
 
 	store.mu.Lock()
-	monitor := store.activeMonitorLocked()
+	defer store.mu.Unlock()
+	monitor := store.monitors[strings.TrimSpace(monitorID)]
+	if monitor == nil || monitor.ID != store.activeMonitorID {
+		return false
+	}
 	if workspaceID != "" {
 		monitor.WorkspaceID = workspaceID
 	} else {
@@ -291,7 +321,7 @@ func (store *activityStore) record(toolName string, payload any, fallback string
 		copy(monitor.Events, monitor.Events[len(monitor.Events)-activityLimit:])
 		monitor.Events = monitor.Events[:activityLimit]
 	}
-	store.mu.Unlock()
+	return true
 }
 
 func (store *activityStore) snapshotMonitor(monitorID, eventID string) (activitySnapshot, bool) {
