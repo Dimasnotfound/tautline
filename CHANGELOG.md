@@ -2,6 +2,34 @@
 
 All notable changes to Tautline are documented here.
 
+## [2.7.1] - 2026-08-05
+
+### Fixed
+
+- Each activity widget now keeps the `monitor_id` from its own prompt bootstrap and ignores later bootstrap broadcasts for different prompts.
+- Archived widgets no longer switch to the newest prompt monitor when ChatGPT publishes updated global tool output, even when the workspace is unchanged.
+
+### Changed
+
+- Advanced the widget resource to `ui://tautline/activity-v5.html` so ChatGPT does not reuse the cached v4 widget behavior.
+
+## [2.7.0] - 2026-08-05
+
+### Added
+
+- Native `gdocs_read_doc` and `gdocs_update_doc` tools implemented directly in Go through `docs.googleapis.com`, without Node.js or the Google Docs MCP Developer Preview endpoint.
+- Direct Google OAuth authorization with PKCE through `-auth-google-docs`, automatic access-token refresh, atomic token persistence, and a read-only `-test-google-docs <document-id>` diagnostic.
+- Native Google Docs status in `/healthz` and staged-release verification that distinguishes the built-in REST integration from external MCP connectors.
+
+### Changed
+
+- Existing official `docsmcp.googleapis.com` connector configuration migrates automatically to the native Google Docs integration while preserving OAuth scopes, credentials, timeout, and token path.
+- The legacy remote Google Docs MCP connector is disabled during migration so the native tools keep the same `gdocs_` names without duplicate registration.
+
+### Security
+
+- Google API responses are size-limited, OAuth refresh tokens remain local under the runtime directory, and token updates continue to use restrictive permissions plus atomic replacement.
+
 ## [2.6.0] - 2026-08-04
 
 ### Added

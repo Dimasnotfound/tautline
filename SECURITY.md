@@ -18,6 +18,7 @@ Tautline can read and modify files, execute commands, delegate work to external 
 - New sub-agent delegation can be disabled globally.
 - Requested and returned 9Router models must be present in the configured allowlist.
 - Runtime state, local environment files, secrets, logs, and binaries are ignored by Git.
+- Native Google Docs OAuth tokens remain under the configured runtime directory, are refreshed only through Google's OAuth endpoint, and are sent only to the Google Docs REST API.
 
 ## Deployment rules
 
@@ -44,4 +45,4 @@ Open a private GitHub security advisory instead of a public issue. Include the a
 
 ## Supported versions
 
-Security fixes are applied to the latest release line. The currently documented public release is Tautline v2.6.0.
+Security fixes are applied to the latest release line. The currently documented public release is Tautline v2.7.1.

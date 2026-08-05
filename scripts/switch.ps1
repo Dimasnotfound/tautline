@@ -12,7 +12,7 @@ $Root = Split-Path -Parent $PSScriptRoot
 $BuildScript = Join-Path $PSScriptRoot "build.ps1"
 $StartScript = Join-Path $PSScriptRoot "start.ps1"
 $EnvPath = Join-Path $Root ".env"
-$ExpectedVersion = "2.6.0"
+$ExpectedVersion = "2.7.1"
 
 $Binary = Join-Path $Root "bin\tautline.exe"
 $Shim = Join-Path $Root "bin\lightpanda-shim.exe"
@@ -517,12 +517,32 @@ function Test-StagedRuntime {
     $Config.lightpanda | Add-Member -NotePropertyName auto_start -NotePropertyValue $false -Force
     $Config.lightpanda | Add-Member -NotePropertyName native_mcp -NotePropertyValue $false -Force
 
-    $EnabledMCPCount = @($Config.mcp_servers | Where-Object { $_.enabled }).Count
+    $NativeGoogleDocsEnabled = [bool]($Config.google_docs -and $Config.google_docs.enabled)
+    foreach ($Server in @($Config.mcp_servers)) {
+        if ($Server.id -eq "google_docs" -and [string]$Server.url -match '^https://docsmcp\.googleapis\.com/') {
+            $NativeGoogleDocsEnabled = $NativeGoogleDocsEnabled -or [bool]$Server.enabled
+        }
+    }
+    $EnabledMCPCount = @($Config.mcp_servers | Where-Object {
+        $_.enabled -and -not ($_.id -eq "google_docs" -and [string]$_.url -match '^https://docsmcp\.googleapis\.com/')
+    }).Count
     foreach ($Server in @($Config.mcp_servers)) {
         if (-not $Server.oauth) { continue }
         $RelativeToken = if ($Server.oauth.token_file) { [string]$Server.oauth.token_file } else { Join-Path "oauth" ("$($Server.id).json") }
         if ([System.IO.Path]::IsPathRooted($RelativeToken) -or $RelativeToken.Contains("..")) {
             throw "MCP OAuth token path is not safe for preflight: $RelativeToken"
+        }
+        $SourceToken = Join-Path $SourceRuntime $RelativeToken
+        $DestinationToken = Join-Path $PreflightRoot $RelativeToken
+        if (Test-Path $SourceToken) {
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $DestinationToken) | Out-Null
+            Copy-Item -Force $SourceToken $DestinationToken
+        }
+    }
+    if ($Config.google_docs -and $Config.google_docs.oauth) {
+        $RelativeToken = if ($Config.google_docs.oauth.token_file) { [string]$Config.google_docs.oauth.token_file } else { "oauth\google_docs.json" }
+        if ([System.IO.Path]::IsPathRooted($RelativeToken) -or $RelativeToken.Contains("..")) {
+            throw "Google Docs OAuth token path is not safe for preflight: $RelativeToken"
         }
         $SourceToken = Join-Path $SourceRuntime $RelativeToken
         $DestinationToken = Join-Path $PreflightRoot $RelativeToken
@@ -586,6 +606,9 @@ function Test-StagedRuntime {
         }
         if ($EnabledMCPCount -gt 0 -and [int]$Health.mcp_clients.connected -lt $EnabledMCPCount) {
             throw "Staged runtime connected $($Health.mcp_clients.connected) of $EnabledMCPCount enabled MCP integrations. See $StandardError"
+        }
+        if ($NativeGoogleDocsEnabled -and (-not $Health.google_docs.enabled -or [string]$Health.google_docs.mode -ne "native-rest")) {
+            throw "Staged runtime did not activate native Google Docs REST integration. See $StandardError"
         }
         Test-StagedOAuthFlow -BaseUrl $PreflightBaseUrl -OwnerToken $PreflightOwnerToken -RuntimeRoot $PreflightRoot
         Write-Host "Staged runtime preflight passed on temporary port $PreflightPort." -ForegroundColor Green

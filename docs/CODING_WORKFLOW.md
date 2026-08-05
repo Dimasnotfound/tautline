@@ -1,6 +1,6 @@
 # Context-safe coding workflow
 
-Tautline v2.6.0 uses one new prompt-scoped activity monitor per user turn, bounded tool results, Codex host guidance, multi-transport MCP support, and an isolated release preflight that protects the active runtime. The recommended workflow keeps repository context local and sends only the information needed for the current task.
+Tautline v2.7.1 uses one new prompt-scoped activity monitor per user turn, keeps each widget bound to its own prompt monitor, and archives older widgets without allowing later activity to replace their timeline. Bounded tool results, native Google Docs REST tools, Codex host guidance, multi-transport MCP support, and an isolated release preflight continue to protect the active runtime.
 
 ## 1. Start one monitor per user turn
 

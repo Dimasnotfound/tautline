@@ -56,6 +56,8 @@ func main() {
 	stop := flag.Bool("stop", false, "stop the Tautline process for this port")
 	openOnly := flag.Bool("open-dashboard", false, "open the dashboard for the running Tautline instance")
 	authMCP := flag.String("auth-mcp", "", "authorize one OAuth-enabled external MCP connector")
+	authGoogleDocs := flag.Bool("auth-google-docs", false, "authorize native Google Docs REST access")
+	testGoogleDocsID := flag.String("test-google-docs", "", "read one Google Doc through the native REST integration")
 	port := flag.String("port", defaults.Port, "local dashboard and MCP port")
 	tunnelMode := flag.String("tunnel", "", "start Cloudflare tunnel mode: quick, named, or empty")
 	openDashboard := flag.Bool("dashboard", defaults.OpenDashboard, "open the local dashboard")
@@ -67,6 +69,16 @@ func main() {
 			fmt.Fprintln(os.Stderr, "MCP OAuth authorization failed:", err)
 			os.Exit(1)
 		}
+	case *authGoogleDocs:
+		if err := authorizeGoogleDocs(store); err != nil {
+			fmt.Fprintln(os.Stderr, "Google Docs OAuth authorization failed:", err)
+			os.Exit(1)
+		}
+	case strings.TrimSpace(*testGoogleDocsID) != "":
+		if err := testGoogleDocs(store, *testGoogleDocsID); err != nil {
+			fmt.Fprintln(os.Stderr, "Google Docs native REST test failed:", err)
+			os.Exit(1)
+		}
 	case *openOnly:
 		doOpenDashboard(store, *port)
 	case *stop:
@@ -74,7 +86,7 @@ func main() {
 	case *start:
 		doStart(store, *port, *tunnelMode, *openDashboard)
 	default:
-		fmt.Printf("usage: tautline -start|-stop|-open-dashboard|-auth-mcp <id> [-port %s] [-dashboard=true] [-tunnel=quick|named]\n", defaults.Port)
+		fmt.Printf("usage: tautline -start|-stop|-open-dashboard|-auth-mcp <id>|-auth-google-docs|-test-google-docs <document-id> [-port %s] [-dashboard=true] [-tunnel=quick|named]\n", defaults.Port)
 	}
 }
 
@@ -150,6 +162,7 @@ func doStart(store *configStore, port, requestedTunnelMode string, openDashboard
 	)
 	registerWidgetResource(mcpServer)
 	registerTools(mcpServer)
+	registerGoogleDocsTools(mcpServer, store)
 	app.mcpClients.attachServer(mcpServer)
 	if cfg.Lightpanda.NativeMCP {
 		startupContext, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Lightpanda.NativeTimeoutSeconds)*time.Second)
@@ -186,6 +199,7 @@ func doStart(store *configStore, port, requestedTunnelMode string, openDashboard
 			"widget":            activityWidgetURI,
 			"subagents":         len(app.agents.slotsSnapshot()),
 			"mcp_clients":       app.mcpClients.summary(),
+			"google_docs":       googleDocsHealth(store),
 			"host_instructions": instructionStatus,
 			"lightpanda":        app.lightpanda.status(),
 			"tunnel":            app.tunnel.status(),

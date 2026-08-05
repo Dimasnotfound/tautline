@@ -187,6 +187,7 @@ const restoredState = window.openai && window.openai.widgetState && typeof windo
 let requestID = 0;
 let monitorID = String(restoredState.monitorId || "");
 let monitorActive = restoredState.active !== false;
+let promptMonitorBound = false;
 let workspaceID = "";
 let workspacePath = "";
 let selectedID = String(restoredState.selectedId || "");
@@ -268,8 +269,10 @@ function persistState() {
 function applyBootstrap(data) {
   const incomingMonitor = String(data.monitorId || data.monitor_id || "");
   if (!incomingMonitor) return;
+  if (promptMonitorBound && monitorID && incomingMonitor !== monitorID) return;
   const changed = monitorID !== incomingMonitor;
   monitorID = incomingMonitor;
+  promptMonitorBound = true;
   const id = data.workspaceId || data.workspace_id;
   workspaceID = id ? String(id) : "";
   workspacePath = String(data.path || data.workspacePath || "");

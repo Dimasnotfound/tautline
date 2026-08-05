@@ -1,4 +1,4 @@
-# Connect Tautline v2.6.0 to ChatGPT
+# Connect Tautline v2.7.1 to ChatGPT
 
 Tautline listens on `127.0.0.1:7688` by default. ChatGPT requires a stable HTTPS origin that forwards to the local MCP endpoint.
 
@@ -73,30 +73,36 @@ Complete the owner authorization flow with the private token stored in `.env` or
 After reconnecting the plugin, send a MyLocal request. At the beginning of every user turn that uses Tautline, the server instructions make ChatGPT call `tautline_activity` exactly once before other Tautline tools. The call renders:
 
 ```text
-ui://tautline/activity-v4.html
+ui://tautline/activity-v5.html
 ```
 
 Starting the local executable alone cannot open an iframe because widget rendering is initiated by a ChatGPT tool call. Each rendered widget receives a unique prompt `monitor_id`. When the next prompt begins, the previous widget becomes archived and stops automatic polling, so it cannot show activity from later prompts. Use `workspace_lookup` before `open_workspace`; both tools and all later workspace, command, browser, skill, agent, and external-MCP calls remain data-only. Use the widget's **Latest** button to return from an older selected event to live tracking.
 
 ## 6. Google Docs integration
 
-Tautline v2.6.0 migrates the exact legacy Google Docs URL `https://docsmcp.googleapis.com/mcp` to `https://docsmcp.googleapis.com/mcp/v1`. Other MCP endpoint paths remain unchanged. Register this OAuth redirect URI in the Google Cloud OAuth client:
+Tautline v2.7.0 exposes Google Docs tools directly from the Go runtime and uses the regular Google Docs REST API. Enable the Google Docs API in the selected Google Cloud project and register this OAuth redirect URI:
 
 ```text
 http://127.0.0.1:8765/oauth/callback
 ```
 
-After the connector is configured, authorize it locally:
+Set the OAuth client values in `.env`, then authorize locally:
 
 ```powershell
-bin\tautline.exe -auth-mcp google_docs
+bin\tautline.exe -auth-google-docs
 ```
 
-The resulting token is stored under `runtime/v2/oauth/` and is excluded by `.gitignore`.
+Verify real read access without modifying a document:
+
+```powershell
+bin\tautline.exe -test-google-docs DOCUMENT_ID
+```
+
+An existing `docsmcp.googleapis.com` connector is migrated automatically into the top-level native `google_docs` configuration. The previous OAuth scopes and token path are retained, and the remote preview connector is disabled. The token remains under `runtime/v2/oauth/`, refreshes automatically, and is excluded by `.gitignore`.
 
 ## Troubleshooting
 
-- Confirm `healthz` reports service `Tautline` and version `2.6.0`.
+- Confirm `healthz` reports service `Tautline`, version `2.7.1`, and `google_docs.mode` as `native-rest` when Google Docs is enabled.
 - Confirm the tunnel forwards to port `7688`.
 - Confirm the public base URL and widget domain contain only the HTTPS origin.
 - Confirm canonical Protected Resource Metadata returns `/mcp`, versioned metadata returns `/mcp/v2`, and both advertise `tautline offline_access`.

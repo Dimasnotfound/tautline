@@ -2,5 +2,5 @@ package main
 
 const (
 	appName    = "Tautline"
-	appVersion = "2.6.0"
+	appVersion = "2.7.1"
 )

@@ -86,6 +86,7 @@ type TautlineConfig struct {
 	Router            RouterConfig        `json:"router"`
 	Lightpanda        LightpandaConfig    `json:"lightpanda"`
 	Tunnel            TunnelConfig        `json:"tunnel"`
+	GoogleDocs        GoogleDocsConfig    `json:"google_docs,omitempty"`
 	MCPServers        []ExternalMCPConfig `json:"mcp_servers,omitempty"`
 	AgentEnabled      bool                `json:"agent_enabled"`
 	AgentCapacity     int                 `json:"agent_capacity"`
@@ -130,6 +131,9 @@ func defaultTautlineConfig() TautlineConfig {
 			Executable: cloudflared,
 			Protocol:   "http2",
 			AutoStart:  false,
+		},
+		GoogleDocs: GoogleDocsConfig{
+			TimeoutSeconds: defaultExternalMCPTimeout,
 		},
 		AgentEnabled:     true,
 		AgentCapacity:    defaultAgentCapacity,
@@ -358,6 +362,21 @@ func validateTautlineConfig(cfg *TautlineConfig) error {
 	default:
 		return fmt.Errorf("invalid tunnel mode %q", cfg.Tunnel.Mode)
 	}
+	migrateNativeGoogleDocsConfig(cfg)
+	if cfg.GoogleDocs.TimeoutSeconds == 0 {
+		cfg.GoogleDocs.TimeoutSeconds = defaultExternalMCPTimeout
+	}
+	if cfg.GoogleDocs.TimeoutSeconds < 5 || cfg.GoogleDocs.TimeoutSeconds > 300 {
+		return fmt.Errorf("Google Docs timeout must be between 5 and 300 seconds")
+	}
+	if cfg.GoogleDocs.Enabled {
+		if cfg.GoogleDocs.OAuth == nil {
+			return errors.New("Google Docs OAuth configuration is required when native Google Docs is enabled")
+		}
+		if err := validateExternalMCPOAuthConfig("Google Docs", cfg.GoogleDocs.OAuth); err != nil {
+			return err
+		}
+	}
 	if err := normalizeExternalMCPConfigs(&cfg.MCPServers); err != nil {
 		return err
 	}
@@ -369,6 +388,7 @@ func (s *configStore) snapshot() TautlineConfig {
 	defer s.mu.RUnlock()
 	copyValue := s.value
 	copyValue.Router.AllowedModels = append([]string(nil), s.value.Router.AllowedModels...)
+	copyValue.GoogleDocs.OAuth = cloneExternalMCPOAuthConfig(s.value.GoogleDocs.OAuth)
 	copyValue.MCPServers = cloneExternalMCPConfigs(s.value.MCPServers)
 	if s.value.AdditionalHeaders != nil {
 		copyValue.AdditionalHeaders = make(map[string]string, len(s.value.AdditionalHeaders))
